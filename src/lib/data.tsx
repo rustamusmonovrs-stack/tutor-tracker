@@ -102,7 +102,7 @@ function messageOf(e: unknown): string {
 }
 
 /** PostgREST returns at most 1000 rows per request, so page through the table. */
-async function fetchAll<T>(table: string, columns: string): Promise<T[]> {
+async function fetchAll<T>(table: string, columns: string, orderBy = "created_at"): Promise<T[]> {
   const sb = getSupabase();
   const pageSize = 1000;
   const rows: T[] = [];
@@ -110,7 +110,7 @@ async function fetchAll<T>(table: string, columns: string): Promise<T[]> {
     const { data, error } = await sb
       .from(table)
       .select(columns)
-      .order("created_at")
+      .order(orderBy)
       .order("id")
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -170,7 +170,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         fetchAll<Student>("students", STUDENT_COLS),
         fetchAll<Topic>("topics", TOPIC_COLS),
         fetchAll<Lesson>("lessons", LESSON_COLS),
-        fetchAll<LessonPlan>("lesson_plans", PLAN_COLS),
+        fetchAll<LessonPlan>("lesson_plans", PLAN_COLS, "updated_at"),
       ]);
       setGroups(g);
       setStudents(s);
