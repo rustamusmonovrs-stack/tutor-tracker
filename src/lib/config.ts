@@ -1,37 +1,30 @@
-import type { LessonResult } from "./types";
+import type { Attendance, Homework } from "./types";
 
-/** Coins per result. Change here and every ranking updates (nothing is stored). */
-export const COINS: Record<LessonResult, number> = {
+/** Coins per homework result. Change here and every ranking updates (nothing is stored). */
+export const HOMEWORK_COINS: Record<Homework, number> = {
   full: 2,
   partial: 1,
   not_done: 0,
-  not_understood: 0,
-  absent: 0,
 };
 
-/** Every Nth consecutive "full" lesson earns the bonus. Absences do not break a streak. */
+/** Every Nth consecutive "full" homework earns the bonus. Absences / unassessed days do not break a streak. */
 export const STREAK_LENGTH = 3;
 export const STREAK_BONUS = 1;
 
 /** A topic repeated this many times is flagged on the Leaderboard. */
 export const STUCK_AFTER = 3;
 
-export const RESULT_ORDER: LessonResult[] = [
-  "full",
-  "partial",
-  "not_done",
-  "absent",
-];
+export const ATTENDANCE_ORDER: Attendance[] = ["present", "absent"];
+export const ATTENDANCE_META: Record<Attendance, { label: string; hint: string }> = {
+  present: { label: "Keldi", hint: "Darsda qatnashdi" },
+  absent: { label: "Kelmadi", hint: "Darsda yo'q" },
+};
 
-export const RESULT_META: Record<
-  LessonResult,
-  { label: string; hint: string; advances: boolean }
-> = {
-  full: { label: "To'liq", hint: "Mavzu o'tildi", advances: true },
-  partial: { label: "Chala", hint: "Yarmi qilindi", advances: false },
-  not_done: { label: "Keldi", hint: "Darsga keldi, vazifa yo'q", advances: false },
-  not_understood: { label: "Tushunmadi", hint: "Qayta tushuntirish", advances: false },
-  absent: { label: "Kelmadi", hint: "Darsda yo'q", advances: false },
+export const HOMEWORK_ORDER: Homework[] = ["full", "partial", "not_done"];
+export const HOMEWORK_META: Record<Homework, { label: string; hint: string }> = {
+  full: { label: "To'liq", hint: "Uy vazifasi to'liq bajarildi" },
+  partial: { label: "Chala", hint: "Uy vazifasi qisman bajarildi" },
+  not_done: { label: "Qilmadi", hint: "Uy vazifasi bajarilmadi" },
 };
 
 export const TIME_ZONE = "Asia/Tashkent";

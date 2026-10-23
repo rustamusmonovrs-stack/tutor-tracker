@@ -13,7 +13,7 @@ import {
 import { getSupabase } from "./supabase/client";
 import { groupByStudent } from "./scoring";
 import { sortTopics } from "./progress";
-import type { Group, Lesson, LessonResult, Student, Topic } from "./types";
+import type { Attendance, Group, Homework, Lesson, LessonPlan, Student, Topic } from "./types";
 
 type Status = "loading" | "ready" | "error";
 
@@ -24,12 +24,15 @@ export interface ToastState {
   action?: { label: string; run: () => void };
 }
 
+/** Change one or both fields of a student's lesson; `undefined` keeps the current value, `null` clears it. */
 export interface MarkArgs {
   student: Student;
   date: string;
-  result: LessonResult;
-  topicId: string | null;
-  topicTitle: string;
+  attendance?: Attendance | null;
+  homework?: Homework | null;
+  /** Used only when the lesson row is created. */
+  topicId?: string | null;
+  topicTitle?: string;
 }
 
 interface DataApi {
@@ -41,6 +44,7 @@ interface DataApi {
   students: Student[];
   topics: Topic[];
   lessons: Lesson[];
+  plans: LessonPlan[];
   /** Groups that are not archived. */
   activeGroups: Group[];
   /** Students that are not archived and belong to a non-archived group. */
@@ -52,9 +56,14 @@ interface DataApi {
   notify: (message: string, opts?: Partial<Pick<ToastState, "kind" | "action">>) => void;
   dismissToast: () => void;
   isSaving: (studentId: string) => boolean;
+  /** Number of writes in flight, and when the last one succeeded (for the "Saqlanmoqda / Saqlandi" chip). */
+  pendingWrites: number;
+  lastSavedAt: number | null;
 
   markLesson: (args: MarkArgs) => Promise<boolean>;
-  clearLesson: (lesson: Lesson) => Promise<boolean>;
+  /** Mark attendance for many students at once (one request). */
+  markAttendanceBulk: (students: Student[], date: string, attendance: Attendance) => Promise<boolean>;
+  savePlan: (groupId: string, date: string, homework: string) => Promise<boolean>;
 
   addGroup: (name: string) => Promise<boolean>;
   renameGroup: (id: string, name: string) => Promise<boolean>;
@@ -83,7 +92,9 @@ export function useData(): DataApi {
 const GROUP_COLS = "id,name,archived_at,created_at";
 const STUDENT_COLS = "id,group_id,name,archived_at,created_at";
 const TOPIC_COLS = "id,student_id,position,title";
-const LESSON_COLS = "id,student_id,topic_id,topic_title,lesson_date,result,created_at";
+const LESSON_COLS = "id,student_id,topic_id,topic_title,lesson_date,attendance,homework,created_at";
+const PLAN_COLS = "id,group_id,lesson_date,homework,updated_at";
+const FALLBACK_TITLE = "Dars";
 
 function messageOf(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) return String((e as { message: unknown }).message);
@@ -116,6 +127,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [plans, setPlans] = useState<LessonPlan[]>([]);
+  const [pendingWrites, setPendingWrites] = useState(0);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [saving, setSaving] = useState<string[]>([]);
 
@@ -151,16 +165,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     setStatus((s) => (s === "ready" ? s : "loading"));
     try {
-      const [g, s, t, l] = await Promise.all([
+      const [g, s, t, l, p] = await Promise.all([
         fetchAll<Group>("groups", GROUP_COLS),
         fetchAll<Student>("students", STUDENT_COLS),
         fetchAll<Topic>("topics", TOPIC_COLS),
         fetchAll<Lesson>("lessons", LESSON_COLS),
+        fetchAll<LessonPlan>("lesson_plans", PLAN_COLS),
       ]);
       setGroups(g);
       setStudents(s);
       setTopics(t);
       setLessons(l);
+      setPlans(p);
       setError(null);
       setStatus("ready");
     } catch (e) {
@@ -176,45 +192,77 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const markSaving = (id: string, on: boolean) =>
     setSaving((ids) => (on ? [...ids, id] : ids.filter((x) => x !== id)));
 
+  const beginWrite = () => setPendingWrites((n) => n + 1);
+  const endWrite = (ok: boolean) => {
+    setPendingWrites((n) => Math.max(0, n - 1));
+    if (ok) setLastSavedAt(Date.now());
+  };
+
   // ---- lessons -----------------------------------------------------------
 
   const markLesson = useCallback<DataApi["markLesson"]>(
-    async ({ student, date, result, topicId, topicTitle }) => {
+    async ({ student, date, attendance, homework, topicId, topicTitle }) => {
       const sb = getSupabase();
       const existing = lessonsRef.current.find(
         (l) => l.student_id === student.id && l.lesson_date === date,
       );
+      const nextAttendance = attendance === undefined ? (existing?.attendance ?? null) : attendance;
+      const nextHomework = homework === undefined ? (existing?.homework ?? null) : homework;
+
+      markSaving(student.id, true);
+      beginWrite();
+
+      // Nothing left on the row: remove it so "not marked" is the absence of a record.
+      if (nextAttendance === null && nextHomework === null) {
+        if (!existing) {
+          markSaving(student.id, false);
+          endWrite(true);
+          return true;
+        }
+        setLessons((ls) => ls.filter((l) => l.id !== existing.id));
+        const { error: err } = await sb.from("lessons").delete().eq("id", existing.id);
+        markSaving(student.id, false);
+        endWrite(!err);
+        if (err) {
+          setLessons((ls) => [...ls, existing]);
+          return fail(err, `${student.name}: o'zgarish saqlanmadi`);
+        }
+        return true;
+      }
+
       const optimistic: Lesson = existing
-        ? { ...existing, result, topic_id: topicId, topic_title: topicTitle }
+        ? { ...existing, attendance: nextAttendance, homework: nextHomework }
         : {
             id: `tmp-${crypto.randomUUID()}`,
             student_id: student.id,
-            topic_id: topicId,
-            topic_title: topicTitle,
+            topic_id: topicId ?? null,
+            topic_title: topicTitle?.trim() || FALLBACK_TITLE,
             lesson_date: date,
-            result,
+            attendance: nextAttendance,
+            homework: nextHomework,
             created_at: new Date().toISOString(),
           };
-
-      markSaving(student.id, true);
       setLessons((ls) =>
         existing ? ls.map((l) => (l.id === existing.id ? optimistic : l)) : [...ls, optimistic],
       );
+
       const { data, error: err } = await sb
         .from("lessons")
         .upsert(
           {
             student_id: student.id,
             lesson_date: date,
-            topic_id: topicId,
-            topic_title: topicTitle,
-            result,
+            topic_id: optimistic.topic_id,
+            topic_title: optimistic.topic_title,
+            attendance: nextAttendance,
+            homework: nextHomework,
           },
           { onConflict: "student_id,lesson_date" },
         )
         .select(LESSON_COLS)
         .single();
       markSaving(student.id, false);
+      endWrite(!(err || !data));
 
       if (err || !data) {
         setLessons((ls) =>
@@ -230,20 +278,81 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [fail],
   );
 
-  const clearLesson = useCallback<DataApi["clearLesson"]>(
-    async (lesson) => {
+  const markAttendanceBulk = useCallback<DataApi["markAttendanceBulk"]>(
+    async (list, date, attendance) => {
       const sb = getSupabase();
-      markSaving(lesson.student_id, true);
-      setLessons((ls) => ls.filter((l) => l.id !== lesson.id));
-      const { error: err } = await sb.from("lessons").delete().eq("id", lesson.id);
-      markSaving(lesson.student_id, false);
-      if (err) {
-        setLessons((ls) => [...ls, lesson]);
-        return fail(err, "Belgi olib tashlanmadi");
+      // Only students with no record yet: never overwrite what the teacher already marked.
+      const targets = list.filter(
+        (s) => !lessonsRef.current.some((l) => l.student_id === s.id && l.lesson_date === date),
+      );
+      if (!targets.length) return true;
+      const rows = targets.map((s) => ({
+        student_id: s.id,
+        lesson_date: date,
+        topic_id: null,
+        topic_title: FALLBACK_TITLE,
+        attendance,
+        homework: null,
+      }));
+      const tmpIds = new Set<string>();
+      const optimistic: Lesson[] = rows.map((r) => {
+        const id = `tmp-${crypto.randomUUID()}`;
+        tmpIds.add(id);
+        return { id, ...r, created_at: new Date().toISOString() } as Lesson;
+      });
+      targets.forEach((s) => markSaving(s.id, true));
+      beginWrite();
+      setLessons((ls) => [...ls, ...optimistic]);
+      const { data, error: err } = await sb
+        .from("lessons")
+        .upsert(rows, { onConflict: "student_id,lesson_date", ignoreDuplicates: true })
+        .select(LESSON_COLS);
+      targets.forEach((s) => markSaving(s.id, false));
+      endWrite(!err);
+      if (err || !data) {
+        setLessons((ls) => ls.filter((l) => !tmpIds.has(l.id)));
+        return fail(err, "Davomat saqlanmadi");
       }
+      setLessons((ls) => [...ls.filter((l) => !tmpIds.has(l.id)), ...(data as Lesson[])]);
       return true;
     },
     [fail],
+  );
+
+  const savePlan = useCallback<DataApi["savePlan"]>(
+    async (groupId, date, homework) => {
+      const sb = getSupabase();
+      const text = homework.trim();
+      const prev = plans.find((p) => p.group_id === groupId && p.lesson_date === date);
+      beginWrite();
+      if (!text) {
+        if (!prev) {
+          endWrite(true);
+          return true;
+        }
+        setPlans((ps) => ps.filter((p) => p.id !== prev.id));
+        const { error: err } = await sb.from("lesson_plans").delete().eq("id", prev.id);
+        endWrite(!err);
+        if (err) {
+          setPlans((ps) => [...ps, prev]);
+          return fail(err, "Vazifa saqlanmadi");
+        }
+        return true;
+      }
+      const { data, error: err } = await sb
+        .from("lesson_plans")
+        .upsert(
+          { group_id: groupId, lesson_date: date, homework: text, updated_at: new Date().toISOString() },
+          { onConflict: "group_id,lesson_date" },
+        )
+        .select(PLAN_COLS)
+        .single();
+      endWrite(!(err || !data));
+      if (err || !data) return fail(err, "Vazifa saqlanmadi");
+      setPlans((ps) => [...ps.filter((p) => !(p.group_id === groupId && p.lesson_date === date)), data as LessonPlan]);
+      return true;
+    },
+    [plans, fail],
   );
 
   // ---- groups ------------------------------------------------------------
@@ -481,6 +590,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     students,
     topics,
     lessons,
+    plans,
     activeGroups,
     activeStudents,
     lessonsByStudent,
@@ -489,8 +599,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     notify,
     dismissToast,
     isSaving,
+    pendingWrites,
+    lastSavedAt,
     markLesson,
-    clearLesson,
+    markAttendanceBulk,
+    savePlan,
     addGroup,
     renameGroup,
     setGroupArchived,

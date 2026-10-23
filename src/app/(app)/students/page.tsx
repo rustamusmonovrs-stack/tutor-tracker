@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useData } from "@/lib/data";
-import { currentTopic } from "@/lib/progress";
-import { getSupabase } from "@/lib/supabase/client";
+import { useMemo, useState, type FormEvent } from "react";
 import { Avatar } from "@/components/Avatar";
 import {
   IconArchive,
+  IconChevronDown,
   IconChevronRight,
+  IconCoin,
   IconEdit,
   IconLogout,
   IconPlus,
@@ -17,26 +16,45 @@ import {
   IconSearch,
   IconTrash,
 } from "@/components/icons";
-import type { Group } from "@/lib/types";
+import { ConfirmDialog } from "@/components/ui";
+import { useData } from "@/lib/data";
+import { currentTopic } from "@/lib/progress";
+import { scoreLessons } from "@/lib/scoring";
+import { getSupabase } from "@/lib/supabase/client";
+import type { Group, Student } from "@/lib/types";
+
+type Sort = "name" | "coins";
 
 export default function StudentsPage() {
   const { groups, students, topicsByStudent, lessonsByStudent, addGroup } = useData();
   const router = useRouter();
   const [newGroup, setNewGroup] = useState("");
+  const [addingGroup, setAddingGroup] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<string>("all");
+  const [sort, setSort] = useState<Sort>("name");
 
   const active = groups.filter((g) => !g.archived_at);
   const archived = groups.filter((g) => g.archived_at);
-  const activeCount = students.filter(
-    (s) => !s.archived_at && active.some((g) => g.id === s.group_id),
-  ).length;
+  const activeCount = students.filter((s) => !s.archived_at && active.some((g) => g.id === s.group_id)).length;
+
+  const totals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of students) {
+      map.set(s.id, scoreLessons(lessonsByStudent.get(s.id) ?? []).reduce((sum, x) => sum + x.coins, 0));
+    }
+    return map;
+  }, [students, lessonsByStudent]);
 
   async function submitGroup(e: FormEvent) {
     e.preventDefault();
     const name = newGroup.trim();
     if (!name) return;
-    if (await addGroup(name)) setNewGroup("");
+    if (await addGroup(name)) {
+      setNewGroup("");
+      setAddingGroup(false);
+    }
   }
 
   async function signOut() {
@@ -47,85 +65,100 @@ export default function StudentsPage() {
 
   function topicSummary(studentId: string): string {
     const topics = topicsByStudent.get(studentId) ?? [];
-    if (!topics.length) return "No topics yet";
+    if (!topics.length) return "Shaxsiy mavzu rejasi yo'q";
     const next = currentTopic(topics, lessonsByStudent.get(studentId) ?? []);
-    return next ? `Next: ${next.title}` : "All topics done";
+    return next ? `Keyingi: ${next.title}` : "Reja tugadi";
   }
+
+  const visible = filter === "all" ? active : active.filter((g) => g.id === filter);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">Students</h1>
+          <h1 className="page-title">O&apos;quvchilar</h1>
           <p className="page-sub">
-            {activeCount} active in {active.length} {active.length === 1 ? "group" : "groups"}
+            {activeCount} ta faol o&apos;quvchi · {active.length} ta guruh
           </p>
         </div>
-        <label className="hint" style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44 }}>
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
-        </label>
+        <div className="page-actions">
+          {addingGroup ? (
+            <form className="form-row" onSubmit={submitGroup}>
+              <input
+                className="input"
+                style={{ width: 200 }}
+                placeholder="Guruh nomi"
+                aria-label="Yangi guruh nomi"
+                maxLength={60}
+                value={newGroup}
+                autoFocus
+                onChange={(e) => setNewGroup(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setAddingGroup(false)}
+              />
+              <button className="btn btn--primary" type="submit" disabled={!newGroup.trim()}>
+                Qo&apos;shish
+              </button>
+            </form>
+          ) : (
+            <button className="btn btn--primary" onClick={() => setAddingGroup(true)}>
+              <IconPlus aria-hidden /> Guruh
+            </button>
+          )}
+        </div>
       </div>
 
-      <form className="form-row" onSubmit={submitGroup}>
-        <input
-          className="input"
-          placeholder="New group name"
-          aria-label="New group name"
-          maxLength={60}
-          value={newGroup}
-          onChange={(e) => setNewGroup(e.target.value)}
-        />
-        <button className="btn btn--primary" type="submit" disabled={!newGroup.trim()}>
-          <IconPlus />
-          Add group
-        </button>
-      </form>
-
-      {students.length > 8 && (
+      <div className="toolbar">
         <label className="search">
-          <IconSearch />
+          <IconSearch aria-hidden />
           <input
             className="input"
             type="search"
             placeholder="Ism bo'yicha qidirish"
-            aria-label="Search students"
+            aria-label="O'quvchini qidirish"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-      )}
+        <div className="seg" role="group" aria-label="Guruh filtri">
+          <button className="seg__btn" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
+            Hammasi
+          </button>
+          {active.map((g) => (
+            <button key={g.id} className="seg__btn" aria-pressed={filter === g.id} onClick={() => setFilter(g.id)}>
+              {g.name}
+            </button>
+          ))}
+        </div>
+        <select className="select" style={{ width: "auto" }} aria-label="Saralash" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+          <option value="name">Ism bo&apos;yicha</option>
+          <option value="coins">Tanga bo&apos;yicha</option>
+        </select>
+        <label className="check">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          Arxiv
+        </label>
+      </div>
 
       {active.length === 0 && (
-        <div className="sheet empty" style={{ marginTop: 16 }}>
-          <strong>No groups yet</strong>
-          <p>Create a group above, e.g. “Beginner”, then add its students.</p>
+        <div className="card empty">
+          <strong>Hali guruh yo&apos;q</strong>
+          <p>Yuqoridagi &quot;Guruh&quot; tugmasi bilan birinchi guruhni yarating.</p>
         </div>
       )}
 
-      {active.map((g) => (
-        <GroupBlock
-          key={g.id}
-          group={g}
-          showArchived={showArchived}
-          summary={topicSummary}
-          query={query}
-        />
-      ))}
-
-      {showArchived && archived.length > 0 && (
-        <>
-          <h2 className="section-title">Archived groups</h2>
-          {archived.map((g) => (
-            <GroupBlock key={g.id} group={g} showArchived summary={topicSummary} query={query} />
+      <div className="stack" style={{ gap: 12 }}>
+        {visible.map((g) => (
+          <GroupBlock key={g.id} group={g} showArchived={showArchived} summary={topicSummary} totals={totals} query={query} sort={sort} />
+        ))}
+        {showArchived &&
+          archived.map((g) => (
+            <GroupBlock key={g.id} group={g} showArchived summary={topicSummary} totals={totals} query={query} sort={sort} />
           ))}
-        </>
-      )}
+      </div>
 
-      <div className="actions" style={{ marginTop: 40 }}>
+      <div className="actions" style={{ marginTop: 32 }}>
         <button className="btn" onClick={() => void signOut()}>
-          <IconLogout />
-          Sign out
+          <IconLogout aria-hidden /> Chiqish
         </button>
       </div>
     </>
@@ -136,24 +169,36 @@ function GroupBlock({
   group,
   showArchived,
   summary,
+  totals,
   query,
+  sort,
 }: {
   group: Group;
   showArchived: boolean;
   summary: (studentId: string) => string;
+  totals: Map<string, number>;
   query: string;
+  sort: Sort;
 }) {
   const { students, addStudent, renameGroup, setGroupArchived, deleteGroup, setStudentArchived } = useData();
+  const members = students.filter((s) => s.group_id === group.id);
+  const [open, setOpen] = useState(members.length > 0);
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(group.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const members = students.filter((s) => s.group_id === group.id);
   const needle = query.trim().toLowerCase();
-  const matches = (name: string) => !needle || name.toLowerCase().includes(needle);
-  const live = members.filter((s) => !s.archived_at && matches(s.name));
-  const liveTotal = members.filter((s) => !s.archived_at).length;
-  const gone = members.filter((s) => s.archived_at && matches(s.name));
+  const matches = (n: string) => !needle || n.toLowerCase().includes(needle);
+  const order = (a: Student, b: Student) =>
+    sort === "coins" ? (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name);
+  const liveAll = members.filter((s) => !s.archived_at);
+  const live = liveAll.filter((s) => matches(s.name)).sort(order);
+  const gone = members.filter((s) => s.archived_at && matches(s.name)).sort(order);
+
+  // A search should reveal matches even in collapsed groups.
+  const expanded = open || Boolean(needle);
 
   async function submitStudent(e: FormEvent) {
     e.preventDefault();
@@ -170,12 +215,8 @@ function GroupBlock({
     else setTitle(group.name);
   }
 
-  async function onDelete() {
-    if (window.confirm(`Delete the empty group “${group.name}”?`)) await deleteGroup(group.id);
-  }
-
   return (
-    <section aria-label={group.name}>
+    <section className="card" aria-label={group.name}>
       <div className="group-head">
         {renaming ? (
           <form className="form-row" style={{ flex: 1 }} onSubmit={submitRename}>
@@ -184,101 +225,132 @@ function GroupBlock({
               value={title}
               autoFocus
               maxLength={60}
-              aria-label="Group name"
+              aria-label="Guruh nomi"
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => e.key === "Escape" && setRenaming(false)}
             />
-            <button className="btn btn--primary btn--sm" type="submit">
-              Save
+            <button className="btn btn--primary" type="submit">
+              Saqlash
             </button>
           </form>
         ) : (
-          <h2>
+          <button className="group-toggle" aria-expanded={expanded} onClick={() => setOpen(!open)}>
+            <IconChevronDown aria-hidden />
             {group.name}
-            <span className="group-head__count">{liveTotal}</span>
-          </h2>
+            {group.archived_at && <span className="chip">Arxiv</span>}
+            <span className="chip">{liveAll.length}</span>
+          </button>
         )}
         {!renaming && (
-          <div style={{ display: "flex", gap: 4 }}>
-            <button className="btn btn--quiet btn--sm" onClick={() => setRenaming(true)}>
-              <IconEdit />
-              Rename
+          <div className="group-head__tools">
+            <button className="icon-btn icon-btn--bare" aria-label={`${group.name}: nomini o'zgartirish`} title="Nomini o'zgartirish" onClick={() => setRenaming(true)}>
+              <IconEdit aria-hidden />
             </button>
             {group.archived_at ? (
-              <button className="btn btn--quiet btn--sm" onClick={() => void setGroupArchived(group.id, false)}>
-                <IconRestore />
-                Restore
+              <button className="icon-btn icon-btn--bare" aria-label={`${group.name}: arxivdan qaytarish`} title="Arxivdan qaytarish" onClick={() => void setGroupArchived(group.id, false)}>
+                <IconRestore aria-hidden />
               </button>
             ) : (
-              <button className="btn btn--quiet btn--sm" onClick={() => void setGroupArchived(group.id, true)}>
-                <IconArchive />
-                Archive
+              <button className="icon-btn icon-btn--bare" aria-label={`${group.name}: arxivlash`} title="Arxivlash (tarix saqlanadi)" onClick={() => void setGroupArchived(group.id, true)}>
+                <IconArchive aria-hidden />
               </button>
             )}
             {members.length === 0 && (
-              <button className="btn btn--quiet btn--sm" style={{ color: "var(--not_done)" }} onClick={() => void onDelete()}>
-                <IconTrash />
-                Delete
+              <button className="icon-btn icon-btn--bare" style={{ color: "var(--bad)" }} aria-label={`${group.name}: o'chirish`} title="Bo'sh guruhni o'chirish" onClick={() => setConfirmDelete(true)}>
+                <IconTrash aria-hidden />
               </button>
             )}
           </div>
         )}
       </div>
 
-      <div className="sheet">
-        {live.length === 0 && (
-          <p className="empty">{needle && liveTotal > 0 ? "Hech kim topilmadi." : "No students in this group yet."}</p>
-        )}
-        {live
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((s) => (
-            <Link key={s.id} href={`/students/${s.id}`} className="row-link">
-              <span className="member">
-                <Avatar name={s.name} />
-                <span>
-                  <span className="row-link__main">{s.name}</span>
-                  <span className="row-link__sub">{summary(s.id)}</span>
-                </span>
-              </span>
-              <span className="chev" aria-hidden>
-                <IconChevronRight />
-              </span>
-            </Link>
-          ))}
-        {showArchived &&
-          gone.map((s) => (
-            <div key={s.id} className="row-link" style={{ opacity: 0.75 }}>
-              <span className="member">
-                <Avatar name={s.name} />
-                <span>
-                  <span className="row-link__main">{s.name}</span>
-                  <span className="row-link__sub">Archived · history kept</span>
-                </span>
-              </span>
-              <button className="btn btn--sm" onClick={() => void setStudentArchived(s.id, false)}>
-                <IconRestore />
-                Restore
-              </button>
+      {expanded && (
+        <>
+          {live.length === 0 && gone.length === 0 ? (
+            <p className="hint" style={{ padding: "4px 16px 12px" }}>
+              {needle && liveAll.length > 0 ? "Hech kim topilmadi." : "Bu guruhda hali o'quvchi yo'q."}
+            </p>
+          ) : (
+            <div className="list" style={{ borderTop: "1px solid var(--line)" }}>
+              {live.map((s) => (
+                <Link key={s.id} href={`/students/${s.id}`} className="row">
+                  <span className="row__who">
+                    <Avatar name={s.name} />
+                    <span style={{ minWidth: 0 }}>
+                      <span className="row__main">{s.name}</span>
+                      <span className="row__sub">{summary(s.id)}</span>
+                    </span>
+                  </span>
+                  <span className="row__end">
+                    <span className="coins">
+                      <IconCoin aria-hidden />
+                      {totals.get(s.id) ?? 0}
+                    </span>
+                    <IconChevronRight aria-hidden />
+                  </span>
+                </Link>
+              ))}
+              {showArchived &&
+                gone.map((s) => (
+                  <div key={s.id} className="row" style={{ opacity: 0.75 }}>
+                    <span className="row__who">
+                      <Avatar name={s.name} />
+                      <span style={{ minWidth: 0 }}>
+                        <span className="row__main">{s.name}</span>
+                        <span className="row__sub">Arxivda · tarix saqlangan</span>
+                      </span>
+                    </span>
+                    <button className="btn btn--sm" onClick={() => void setStudentArchived(s.id, false)}>
+                      <IconRestore aria-hidden /> Qaytarish
+                    </button>
+                  </div>
+                ))}
             </div>
-          ))}
-      </div>
-
-      {!group.archived_at && (
-        <form className="form-row" style={{ marginTop: 10 }} onSubmit={submitStudent}>
-          <input
-            className="input"
-            placeholder={`Add student to ${group.name}`}
-            aria-label={`Add student to ${group.name}`}
-            maxLength={80}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button className="btn" type="submit" disabled={!name.trim()}>
-            <IconPlus />
-            Add
-          </button>
-        </form>
+          )}
+          {!group.archived_at && (
+            <div className="group-add">
+              {adding ? (
+                <form className="form-row" onSubmit={submitStudent}>
+                  <input
+                    className="input"
+                    placeholder={`${group.name}: yangi o'quvchi ismi`}
+                    aria-label={`${group.name} guruhiga o'quvchi qo'shish`}
+                    maxLength={80}
+                    value={name}
+                    autoFocus
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Escape" && setAdding(false)}
+                  />
+                  <button className="btn btn--primary" type="submit" disabled={!name.trim()}>
+                    Qo&apos;shish
+                  </button>
+                  <button className="btn btn--ghost" type="button" onClick={() => setAdding(false)}>
+                    Yopish
+                  </button>
+                </form>
+              ) : (
+                <button className="btn btn--ghost btn--sm" onClick={() => setAdding(true)}>
+                  <IconPlus aria-hidden /> O&apos;quvchi qo&apos;shish
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`“${group.name}” guruhini o'chirasizmi?`}
+        confirmLabel="O'chirish"
+        danger
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          void deleteGroup(group.id);
+        }}
+      >
+        Guruh bo&apos;sh, shuning uchun hech qanday o&apos;quvchi tarixi yo&apos;qolmaydi.
+      </ConfirmDialog>
     </section>
   );
 }

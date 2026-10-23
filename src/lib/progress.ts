@@ -5,22 +5,22 @@ export function sortTopics(topics: Topic[]): Topic[] {
 }
 
 /**
- * The topic a student works on next: the first one (by position) that has no "full" lesson.
+ * The topic a student works on next: the first one (by position) without a fully completed homework.
  * Pass only the lessons dated before the day you are planning for.
  * Derived from lessons, so there is no pointer that can drift out of sync.
  */
 export function currentTopic(topics: Topic[], lessons: Lesson[]): Topic | null {
   const done = new Set(
-    lessons.filter((l) => l.result === "full" && l.topic_id).map((l) => l.topic_id as string),
+    lessons.filter((l) => l.homework === "full" && l.topic_id).map((l) => l.topic_id as string),
   );
   return sortTopics(topics).find((t) => !done.has(t.id)) ?? null;
 }
 
-/** How many lessons were spent on this topic without finishing it (partial / not done / not understood). */
+/** How many lessons were spent on this topic without finishing it (partial / not done homework). */
 export function repeatCount(topic: Topic | null, lessons: Lesson[]): number {
   if (!topic) return 0;
   return lessons.filter(
-    (l) => l.topic_id === topic.id && l.result !== "full" && l.result !== "absent",
+    (l) => l.topic_id === topic.id && (l.homework === "partial" || l.homework === "not_done"),
   ).length;
 }
 
@@ -29,7 +29,7 @@ export type TopicStatus = "done" | "current" | "upcoming";
 export function topicStatuses(topics: Topic[], lessons: Lesson[]): Map<string, TopicStatus> {
   const current = currentTopic(topics, lessons);
   const done = new Set(
-    lessons.filter((l) => l.result === "full" && l.topic_id).map((l) => l.topic_id as string),
+    lessons.filter((l) => l.homework === "full" && l.topic_id).map((l) => l.topic_id as string),
   );
   const map = new Map<string, TopicStatus>();
   for (const t of topics) {
