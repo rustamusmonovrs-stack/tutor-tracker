@@ -1179,7 +1179,7 @@ textarea.input {
 
 @media (min-width: 860px) {
   .roster--group .student {
-    grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 1fr) 470px;
     align-items: center;
     gap: 18px;
     padding: 8px 0;
@@ -1270,5 +1270,11 @@ textarea.input {
   }
   .res[aria-pressed="true"] .res__icon .draw {
     animation: none;
+  }
+}
+
+@media (min-width: 860px) {
+  .main {
+    max-width: 980px;
   }
 }
