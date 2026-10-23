@@ -154,7 +154,7 @@ const RESULT_ICONS: Record<LessonResult, (p: P) => ReactNode> = {
   not_done: (p) => (
     <Svg {...p} className="res__icon">
       <circle cx="12" cy="12" r="8.6" />
-      <path d="m9 9 6 6M15 9l-6 6" />
+      <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
     </Svg>
   ),
   not_understood: (p) => (

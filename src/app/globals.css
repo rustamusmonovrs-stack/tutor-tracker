@@ -552,8 +552,8 @@ textarea.input {
   --cb: var(--partial-bg);
 }
 .res--not_done {
-  --c: var(--not_done);
-  --cb: var(--not_done-bg);
+  --c: var(--brand);
+  --cb: var(--brand-tint);
 }
 .res--not_understood {
   --c: var(--not_understood);

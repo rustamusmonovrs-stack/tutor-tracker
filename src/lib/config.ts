@@ -20,7 +20,6 @@ export const RESULT_ORDER: LessonResult[] = [
   "full",
   "partial",
   "not_done",
-  "not_understood",
   "absent",
 ];
 
@@ -30,7 +29,7 @@ export const RESULT_META: Record<
 > = {
   full: { label: "To'liq", hint: "Mavzu o'tildi", advances: true },
   partial: { label: "Chala", hint: "Yarmi qilindi", advances: false },
-  not_done: { label: "Qilmadi", hint: "Vazifa yo'q", advances: false },
+  not_done: { label: "Keldi", hint: "Darsga keldi, vazifa yo'q", advances: false },
   not_understood: { label: "Tushunmadi", hint: "Qayta tushuntirish", advances: false },
   absent: { label: "Kelmadi", hint: "Darsda yo'q", advances: false },
 };
