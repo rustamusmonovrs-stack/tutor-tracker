@@ -8,6 +8,18 @@ import { useData } from "@/lib/data";
 import { formatShort } from "@/lib/dates";
 import { currentTopic, repeatCount, topicStatuses } from "@/lib/progress";
 import { scoreLessons } from "@/lib/scoring";
+import { Avatar } from "@/components/Avatar";
+import {
+  IconArchive,
+  IconArrowDown,
+  IconArrowUp,
+  IconChevronLeft,
+  IconClose,
+  IconEdit,
+  IconPlus,
+  IconRestore,
+  IconTrash,
+} from "@/components/icons";
 import type { Topic } from "@/lib/types";
 
 export default function StudentPage() {
@@ -101,18 +113,22 @@ export default function StudentPage() {
     <>
       <p style={{ marginBottom: 10 }}>
         <Link href="/students" className="btn btn--quiet btn--sm" style={{ paddingInline: 0 }}>
-          ‹ Students
+          <IconChevronLeft />
+          Students
         </Link>
       </p>
 
       <div className="page-head">
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Avatar name={student.name} size={52} />
+          <div>
           <h1 className="page-title">{student.name}</h1>
           <p className="page-sub">
             {student.archived_at ? "Archived · " : ""}
             {topics.length ? `${doneCount} of ${topics.length} topics done · ` : ""}
             {totalCoins} coins overall
           </p>
+          </div>
         </div>
       </div>
 
@@ -186,10 +202,10 @@ export default function StudentPage() {
                     </span>
                     <span className="topic-row__tools">
                       <button className="tool" aria-label={`Move “${t.title}” up`} disabled={i === 0} onClick={() => void moveTopic(student.id, t.id, -1)}>
-                        ↑
+                        <IconArrowUp />
                       </button>
                       <button className="tool" aria-label={`Move “${t.title}” down`} disabled={i === topics.length - 1} onClick={() => void moveTopic(student.id, t.id, 1)}>
-                        ↓
+                        <IconArrowDown />
                       </button>
                       <button
                         className="tool"
@@ -199,10 +215,10 @@ export default function StudentPage() {
                           setTopicDraft(t.title);
                         }}
                       >
-                        ✎
+                        <IconEdit />
                       </button>
                       <button className="tool" aria-label={`Remove “${t.title}”`} onClick={() => void onRemoveTopic(t)}>
-                        ✕
+                        <IconClose />
                       </button>
                     </span>
                   </>
@@ -225,6 +241,7 @@ export default function StudentPage() {
         </label>
         <div>
           <button className="btn btn--primary" type="submit" disabled={lines === 0}>
+            <IconPlus />
             {lines > 1 ? `Add ${lines} topics` : "Add topic"}
           </button>
         </div>
@@ -255,6 +272,7 @@ export default function StudentPage() {
         </p>
         <div className="actions">
           <button className="btn" onClick={() => void setStudentArchived(student.id, !student.archived_at)}>
+            {student.archived_at ? <IconRestore /> : <IconArchive />}
             {student.archived_at ? "Restore student" : "Archive student"}
           </button>
         </div>
@@ -271,6 +289,7 @@ export default function StudentPage() {
             onChange={(e) => setConfirmText(e.target.value)}
           />
           <button className="btn btn--danger" disabled={busy || confirmText.trim() !== student.name} onClick={() => void onDelete()}>
+            <IconTrash />
             Delete
           </button>
         </div>

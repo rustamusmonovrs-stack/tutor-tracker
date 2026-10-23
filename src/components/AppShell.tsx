@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { IconPeople, IconRank, IconToday } from "@/components/icons";
 import { useData } from "@/lib/data";
 
 const LINKS = [
@@ -80,44 +81,5 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
     </div>
-  );
-}
-
-function svgProps() {
-  return {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.9,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-}
-
-function IconToday() {
-  return (
-    <svg {...svgProps()}>
-      <rect x="4" y="5" width="16" height="15" rx="3" />
-      <path d="M8 3v4M16 3v4M8.5 13.5l2.4 2.4 4.6-4.8" />
-    </svg>
-  );
-}
-
-function IconRank() {
-  return (
-    <svg {...svgProps()}>
-      <path d="M5 20V12M12 20V5M19 20v-9" />
-    </svg>
-  );
-}
-
-function IconPeople() {
-  return (
-    <svg {...svgProps()}>
-      <circle cx="9" cy="8.5" r="3.2" />
-      <path d="M3.5 19c.5-3.2 2.7-5 5.5-5s5 1.8 5.5 5" />
-      <path d="M16 5.6a3 3 0 0 1 0 5.8M17.5 14.3c1.7.6 2.7 2.3 3 4.7" />
-    </svg>
   );
 }

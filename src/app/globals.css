@@ -955,22 +955,198 @@ textarea.input {
   }
 }
 
-/* ---------- group task + compact roster ---------- */
+/* ---------- avatar, task board, compact roster ---------- */
 
-.task-bar {
-  display: flex;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border: 1.5px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--sheet);
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
+.student__who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.student__who .student__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-board {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.12) inset, 0 6px 18px rgb(31 58 147 / 0.22);
+}
+
+.task-board__main {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.task-board__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: rgb(255 255 255 / 0.72);
+}
+
+.task-board__label svg {
+  width: 17px;
+  height: 17px;
+}
+
+.task-board__input {
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1.5px dashed rgb(255 255 255 / 0.35);
+  background: transparent;
+  color: #fff;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: border-color 160ms;
+}
+
+.task-board__input::placeholder {
+  color: rgb(255 255 255 / 0.45);
+  font-weight: 500;
+}
+
+.task-board__input:focus-visible {
+  outline: 0;
+  border-bottom: 1.5px solid var(--coin);
+}
+
+.task-board__progress {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 84px;
+}
+
+.task-board__progress strong {
+  font-size: var(--fs-xl);
+  line-height: 1;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.task-board__progress strong span {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: rgb(255 255 255 / 0.6);
+}
+
+.meter {
+  display: block;
+  width: 84px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgb(255 255 255 / 0.2);
+}
+
+.meter__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--coin);
+  transition: width 320ms cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+.coins svg {
+  width: 18px;
+  height: 18px;
+  margin-left: -1px;
+}
+
+.coins:has(svg)::before {
+  display: none;
+}
+
+.coins:has(svg) {
+  padding-left: 5px;
+}
+
+/* result stamps: icon over label */
+.res {
+  gap: 3px;
+}
+
+.res__icon {
+  width: 20px;
+  height: 20px;
+  transition: transform 180ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.res:hover:not(:disabled) .res__icon {
+  transform: scale(1.1);
+}
+
+.res[aria-pressed="true"] .res__icon {
+  transform: scale(1.12);
+}
+
+.res__icon .draw {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 0;
+}
+
+.res[aria-pressed="true"] .res__icon .draw {
+  animation: draw 300ms ease-out;
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 14;
+  }
+}
+
+.res:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.res {
+  transition: background-color 90ms, border-color 90ms, color 90ms, transform 90ms;
+}
+
+.res__pts {
+  display: none;
+}
+
+.res--full .res__pts,
+.res--partial .res__pts {
+  display: inline;
+}
+
+/* Group mode: one tight row per student */
 .roster--group .student {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
-  padding: 10px 0;
+  padding: 10px 0 12px;
 }
 
 .roster--group .student__name {
@@ -986,15 +1162,113 @@ textarea.input {
 .roster--group .res--full,
 .roster--group .res--partial {
   grid-column: auto;
-  min-height: 44px;
-  padding: 4px 2px;
-  font-size: var(--fs-xs);
+  flex-direction: column;
+  min-height: 52px;
+  padding: 5px 2px;
+  font-size: 0.7rem;
+}
+
+.roster--group .res__pts {
+  display: none;
+}
+
+.roster--group .res__icon {
+  width: 18px;
+  height: 18px;
 }
 
 @media (min-width: 860px) {
   .roster--group .student {
-    grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
     align-items: center;
-    gap: 16px;
+    gap: 18px;
+    padding: 8px 0;
+  }
+  .roster--group .results {
+    gap: 8px;
+  }
+  .roster--group .res,
+  .roster--group .res--full,
+  .roster--group .res--partial {
+    flex-direction: row;
+    gap: 6px;
+    min-height: 42px;
+    font-size: var(--fs-sm);
+  }
+  .roster--group .res__icon {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+@media (max-width: 480px) {
+  .task-board {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .task-board__progress {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    justify-items: stretch;
+  }
+  .meter {
+    width: 100%;
+  }
+}
+
+/* icon buttons */
+.icon-btn svg,
+.tool svg {
+  width: 20px;
+  height: 20px;
+}
+
+.btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.chev svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* students: search + member grid */
+.search {
+  position: relative;
+  display: block;
+  margin-top: 14px;
+}
+
+.search svg {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  width: 19px;
+  height: 19px;
+  color: var(--ink-faint);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.search .input {
+  padding-left: 42px;
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .res__icon,
+  .res,
+  .meter__fill {
+    transition: none;
+  }
+  .res[aria-pressed="true"] .res__icon .draw {
+    animation: none;
   }
 }

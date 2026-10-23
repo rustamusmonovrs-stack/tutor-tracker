@@ -6,6 +6,17 @@ import { useRouter } from "next/navigation";
 import { useData } from "@/lib/data";
 import { currentTopic } from "@/lib/progress";
 import { getSupabase } from "@/lib/supabase/client";
+import { Avatar } from "@/components/Avatar";
+import {
+  IconArchive,
+  IconChevronRight,
+  IconEdit,
+  IconLogout,
+  IconPlus,
+  IconRestore,
+  IconSearch,
+  IconTrash,
+} from "@/components/icons";
 import type { Group } from "@/lib/types";
 
 export default function StudentsPage() {
@@ -13,6 +24,7 @@ export default function StudentsPage() {
   const router = useRouter();
   const [newGroup, setNewGroup] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
 
   const active = groups.filter((g) => !g.archived_at);
   const archived = groups.filter((g) => g.archived_at);
@@ -65,9 +77,24 @@ export default function StudentsPage() {
           onChange={(e) => setNewGroup(e.target.value)}
         />
         <button className="btn btn--primary" type="submit" disabled={!newGroup.trim()}>
+          <IconPlus />
           Add group
         </button>
       </form>
+
+      {students.length > 8 && (
+        <label className="search">
+          <IconSearch />
+          <input
+            className="input"
+            type="search"
+            placeholder="Ism bo'yicha qidirish"
+            aria-label="Search students"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      )}
 
       {active.length === 0 && (
         <div className="sheet empty" style={{ marginTop: 16 }}>
@@ -82,6 +109,7 @@ export default function StudentsPage() {
           group={g}
           showArchived={showArchived}
           summary={topicSummary}
+          query={query}
         />
       ))}
 
@@ -89,13 +117,14 @@ export default function StudentsPage() {
         <>
           <h2 className="section-title">Archived groups</h2>
           {archived.map((g) => (
-            <GroupBlock key={g.id} group={g} showArchived summary={topicSummary} />
+            <GroupBlock key={g.id} group={g} showArchived summary={topicSummary} query={query} />
           ))}
         </>
       )}
 
       <div className="actions" style={{ marginTop: 40 }}>
         <button className="btn" onClick={() => void signOut()}>
+          <IconLogout />
           Sign out
         </button>
       </div>
@@ -107,10 +136,12 @@ function GroupBlock({
   group,
   showArchived,
   summary,
+  query,
 }: {
   group: Group;
   showArchived: boolean;
   summary: (studentId: string) => string;
+  query: string;
 }) {
   const { students, addStudent, renameGroup, setGroupArchived, deleteGroup, setStudentArchived } = useData();
   const [name, setName] = useState("");
@@ -118,8 +149,11 @@ function GroupBlock({
   const [title, setTitle] = useState(group.name);
 
   const members = students.filter((s) => s.group_id === group.id);
-  const live = members.filter((s) => !s.archived_at);
-  const gone = members.filter((s) => s.archived_at);
+  const needle = query.trim().toLowerCase();
+  const matches = (name: string) => !needle || name.toLowerCase().includes(needle);
+  const live = members.filter((s) => !s.archived_at && matches(s.name));
+  const liveTotal = members.filter((s) => !s.archived_at).length;
+  const gone = members.filter((s) => s.archived_at && matches(s.name));
 
   async function submitStudent(e: FormEvent) {
     e.preventDefault();
@@ -161,25 +195,29 @@ function GroupBlock({
         ) : (
           <h2>
             {group.name}
-            <span className="group-head__count">{live.length}</span>
+            <span className="group-head__count">{liveTotal}</span>
           </h2>
         )}
         {!renaming && (
           <div style={{ display: "flex", gap: 4 }}>
             <button className="btn btn--quiet btn--sm" onClick={() => setRenaming(true)}>
+              <IconEdit />
               Rename
             </button>
             {group.archived_at ? (
               <button className="btn btn--quiet btn--sm" onClick={() => void setGroupArchived(group.id, false)}>
+                <IconRestore />
                 Restore
               </button>
             ) : (
               <button className="btn btn--quiet btn--sm" onClick={() => void setGroupArchived(group.id, true)}>
+                <IconArchive />
                 Archive
               </button>
             )}
             {members.length === 0 && (
               <button className="btn btn--quiet btn--sm" style={{ color: "var(--not_done)" }} onClick={() => void onDelete()}>
+                <IconTrash />
                 Delete
               </button>
             )}
@@ -188,28 +226,37 @@ function GroupBlock({
       </div>
 
       <div className="sheet">
-        {live.length === 0 && <p className="empty">No students in this group yet.</p>}
+        {live.length === 0 && (
+          <p className="empty">{needle && liveTotal > 0 ? "Hech kim topilmadi." : "No students in this group yet."}</p>
+        )}
         {live
           .sort((a, b) => a.name.localeCompare(b.name))
           .map((s) => (
             <Link key={s.id} href={`/students/${s.id}`} className="row-link">
-              <span>
-                <span className="row-link__main">{s.name}</span>
-                <span className="row-link__sub">{summary(s.id)}</span>
+              <span className="member">
+                <Avatar name={s.name} />
+                <span>
+                  <span className="row-link__main">{s.name}</span>
+                  <span className="row-link__sub">{summary(s.id)}</span>
+                </span>
               </span>
               <span className="chev" aria-hidden>
-                ›
+                <IconChevronRight />
               </span>
             </Link>
           ))}
         {showArchived &&
           gone.map((s) => (
             <div key={s.id} className="row-link" style={{ opacity: 0.75 }}>
-              <span>
-                <span className="row-link__main">{s.name}</span>
-                <span className="row-link__sub">Archived · history kept</span>
+              <span className="member">
+                <Avatar name={s.name} />
+                <span>
+                  <span className="row-link__main">{s.name}</span>
+                  <span className="row-link__sub">Archived · history kept</span>
+                </span>
               </span>
               <button className="btn btn--sm" onClick={() => void setStudentArchived(s.id, false)}>
+                <IconRestore />
                 Restore
               </button>
             </div>
@@ -227,6 +274,7 @@ function GroupBlock({
             onChange={(e) => setName(e.target.value)}
           />
           <button className="btn" type="submit" disabled={!name.trim()}>
+            <IconPlus />
             Add
           </button>
         </form>

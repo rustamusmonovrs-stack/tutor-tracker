@@ -7,6 +7,8 @@ import { useData } from "@/lib/data";
 import { addDays, formatDay, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic, repeatCount } from "@/lib/progress";
 import { buildStandings, scoreLessons } from "@/lib/scoring";
+import { Avatar } from "@/components/Avatar";
+import { IconChevronLeft, IconChevronRight, IconCoin, IconTask, ResultIcon } from "@/components/icons";
 import type { Lesson, LessonResult, Student, Topic } from "@/lib/types";
 
 interface RowModel {
@@ -253,7 +255,7 @@ export default function TodayPage() {
         </div>
         <div className="day-nav">
           <button className="icon-btn" aria-label="Previous day" onClick={() => setDate(addDays(date, -1))}>
-            ‹
+            <IconChevronLeft />
           </button>
           <button
             className="btn btn--quiet btn--sm"
@@ -269,7 +271,7 @@ export default function TodayPage() {
             disabled={date >= today}
             onClick={() => setDate(addDays(date, 1))}
           >
-            ›
+            <IconChevronRight />
           </button>
         </div>
       </div>
@@ -288,18 +290,34 @@ export default function TodayPage() {
         ))}
       </div>
 
-      <form className="task-bar" onSubmit={(e) => void commitTask(e)}>
-        <label className="field" style={{ flex: 1 }}>
-          <span className="field__label">Group task · vazifa (hamma o&apos;quvchiga)</span>
+      <form className="task-board" onSubmit={(e) => void commitTask(e)}>
+        <div className="task-board__main">
+          <label className="task-board__label" htmlFor="group-task">
+            <IconTask />
+            Bugungi vazifa
+          </label>
           <input
-            className="input"
+            id="group-task"
+            className="task-board__input"
             value={taskDraft}
             maxLength={200}
-            placeholder="Masalan: Present perfect, 12-mashq"
+            autoComplete="off"
+            placeholder="Hamma o'quvchi uchun vazifani yozing"
             onChange={(e) => setTaskDraft(e.target.value)}
             onBlur={() => void commitTask()}
           />
-        </label>
+        </div>
+        {rows.length > 0 && (
+          <div className="task-board__progress" aria-label={`${marked} / ${rows.length} belgilandi`}>
+            <strong>
+              {marked}
+              <span>/{rows.length}</span>
+            </strong>
+            <span className="meter" role="presentation">
+              <span className="meter__fill" style={{ width: `${(marked / rows.length) * 100}%` }} />
+            </span>
+          </div>
+        )}
       </form>
 
       <div className="sheet" style={{ marginTop: 14 }}>
@@ -316,8 +334,9 @@ export default function TodayPage() {
               return (
                 <li className="student" key={row.student.id}>
                   <div className="student__head">
-                    <Link href={`/students/${row.student.id}`} className="student__name" style={{ color: "inherit", textDecoration: "none" }}>
-                      {row.student.name}
+                    <Link href={`/students/${row.student.id}`} className="student__who">
+                      <Avatar name={row.student.name} />
+                      <span className="student__name">{row.student.name}</span>
                     </Link>
                     <span style={{ display: "flex", gap: 6 }}>
                       {row.dayCoins !== null && row.dayCoins > 0 && (
@@ -326,6 +345,7 @@ export default function TodayPage() {
                         </span>
                       )}
                       <span className="coins" title="Coins this week">
+                        <IconCoin />
                         {row.weekCoins}
                       </span>
                     </span>
@@ -366,7 +386,8 @@ export default function TodayPage() {
                         disabled={busy}
                         onClick={() => void onMark(row, r)}
                       >
-                        <span>{RESULT_META[r].label}</span>
+                        <ResultIcon result={r} />
+                        <span className="res__label">{RESULT_META[r].label}</span>
                         {COINS[r] > 0 && <span className="res__pts">+{COINS[r]}</span>}
                       </button>
                     ))}
