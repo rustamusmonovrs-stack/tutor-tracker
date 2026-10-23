@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { COINS, RESULT_META, RESULT_ORDER, STUCK_AFTER } from "@/lib/config";
 import { useData } from "@/lib/data";
 import { addDays, formatDay, todayISO, weekStart } from "@/lib/dates";
@@ -30,6 +30,9 @@ export default function TodayPage() {
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Group task: one shared assignment for the whole group on this day.
+  const [task, setTask] = useState("");
+  const [taskDraft, setTaskDraft] = useState("");
 
   const group = activeGroups.find((g) => g.id === groupId) ?? activeGroups[0] ?? null;
   const roster = useMemo(
@@ -39,6 +42,32 @@ export default function TodayPage() {
         : [],
     [activeStudents, group],
   );
+
+  const taskKey = group ? `jurnal:task:${group.id}:${date}` : null;
+
+  // Restore the task for this group + day: saved draft first, else the title already used by lessons that day.
+  useEffect(() => {
+    let value = "";
+    try {
+      if (taskKey) value = window.localStorage.getItem(taskKey) ?? "";
+    } catch {
+      /* storage unavailable: fall through */
+    }
+    if (!value) {
+      const counts = new Map<string, number>();
+      for (const s of roster) {
+        const l = (lessonsByStudent.get(s.id) ?? []).find((x) => x.lesson_date === date);
+        if (l && l.topic_id === null && l.topic_title !== "Mavzu kiritilmagan") {
+          counts.set(l.topic_title, (counts.get(l.topic_title) ?? 0) + 1);
+        }
+      }
+      value = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+    }
+    setTask(value);
+    setTaskDraft(value);
+    // Only re-run when the group/day changes, not on every lesson edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskKey]);
 
   const weekCoins = useMemo(() => {
     const from = weekStart(date);
@@ -56,8 +85,8 @@ export default function TodayPage() {
     const before = lessons.filter((l) => l.lesson_date < date);
     const planned = currentTopic(topics, before);
     const override = custom[`${student.id}:${date}`];
-    const title = existing?.topic_title ?? override ?? planned?.title ?? "";
-    const linked = existing?.topic_id ?? (override ? null : planned?.id ?? null);
+    const title = existing?.topic_title ?? (task || override) ?? planned?.title ?? "";
+    const linked = existing?.topic_id ?? (task || override ? null : planned?.id ?? null);
     const position = topics.find((t) => t.id === linked)?.position ?? null;
     const dayCoins = existing
       ? (scoreLessons(lessons).find((s) => s.lesson.id === existing.id)?.coins ?? null)
@@ -107,6 +136,9 @@ export default function TodayPage() {
     if (existing) {
       topicId = existing.topic_id;
       topicTitle = existing.topic_title;
+    } else if (task) {
+      topicId = null;
+      topicTitle = task;
     } else if (override && override !== planned?.title) {
       topicId = null;
       topicTitle = override;
@@ -140,6 +172,31 @@ export default function TodayPage() {
           ? `${student.name}: +${coins}${bonus}`
           : `${student.name}: ${RESULT_META[result].label}`,
       );
+    }
+  }
+
+  async function commitTask(e?: FormEvent) {
+    e?.preventDefault();
+    const next = taskDraft.trim();
+    const prev = task;
+    if (next === prev) return;
+    setTask(next);
+    try {
+      if (taskKey) {
+        if (next) window.localStorage.setItem(taskKey, next);
+        else window.localStorage.removeItem(taskKey);
+      }
+    } catch {
+      /* storage unavailable: the task still applies for this session */
+    }
+    // Fix a typo everywhere: lessons already marked today with the old task get the new title.
+    if (prev && next) {
+      for (const s of roster) {
+        const l = (lessonsByStudent.get(s.id) ?? []).find((x) => x.lesson_date === date);
+        if (l && l.topic_id === null && l.topic_title === prev) {
+          await markLesson({ student: s, date, result: l.result, topicId: null, topicTitle: next });
+        }
+      }
     }
   }
 
@@ -231,6 +288,20 @@ export default function TodayPage() {
         ))}
       </div>
 
+      <form className="task-bar" onSubmit={(e) => void commitTask(e)}>
+        <label className="field" style={{ flex: 1 }}>
+          <span className="field__label">Group task · vazifa (hamma o&apos;quvchiga)</span>
+          <input
+            className="input"
+            value={taskDraft}
+            maxLength={200}
+            placeholder="Masalan: Present perfect, 12-mashq"
+            onChange={(e) => setTaskDraft(e.target.value)}
+            onBlur={() => void commitTask()}
+          />
+        </label>
+      </form>
+
       <div className="sheet" style={{ marginTop: 14 }}>
         {rows.length === 0 ? (
           <div className="empty">
@@ -238,7 +309,7 @@ export default function TodayPage() {
             <Link href="/students">Add students</Link>
           </div>
         ) : (
-          <ul className="roster">
+          <ul className={`roster${task ? " roster--group" : ""}`}>
             {rows.map((row) => {
               const busy = isSaving(row.student.id);
               const stuck = row.repeats >= STUCK_AFTER;
@@ -260,7 +331,7 @@ export default function TodayPage() {
                     </span>
                   </div>
 
-                  {editing === row.student.id ? (
+                  {task ? null : editing === row.student.id ? (
                     <form className="topic-edit form-row" onSubmit={(e) => void saveTopic(e, row)}>
                       <input
                         className="input"

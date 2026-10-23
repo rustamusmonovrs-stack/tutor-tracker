@@ -954,3 +954,47 @@ textarea.input {
     bottom: 24px;
   }
 }
+
+/* ---------- group task + compact roster ---------- */
+
+.task-bar {
+  display: flex;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--sheet);
+}
+
+.roster--group .student {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.roster--group .student__name {
+  font-size: var(--fs-md);
+}
+
+.roster--group .results {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.roster--group .res,
+.roster--group .res--full,
+.roster--group .res--partial {
+  grid-column: auto;
+  min-height: 44px;
+  padding: 4px 2px;
+  font-size: var(--fs-xs);
+}
+
+@media (min-width: 860px) {
+  .roster--group .student {
+    grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr);
+    align-items: center;
+    gap: 16px;
+  }
+}
