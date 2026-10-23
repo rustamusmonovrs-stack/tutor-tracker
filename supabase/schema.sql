@@ -53,9 +53,13 @@ create table if not exists public.lesson_plans (
   owner_id    uuid not null default auth.uid() references auth.users (id) on delete cascade,
   group_id    uuid not null references public.groups (id) on delete cascade,
   lesson_date date not null,
-  homework    text not null check (char_length(btrim(homework)) between 1 and 1000),
+  topic       text,
+  homework    text,
   updated_at  timestamptz not null default now(),
-  unique (group_id, lesson_date)
+  unique (group_id, lesson_date),
+  constraint lesson_plans_homework_len check (homework is null or char_length(btrim(homework)) between 1 and 1000),
+  constraint lesson_plans_topic_len    check (topic    is null or char_length(btrim(topic))    between 1 and 300),
+  constraint lesson_plans_has_content  check (homework is not null or topic is not null)
 );
 
 -- Indexes for foreign keys, RLS owner checks and date-range queries

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { IconChevronLeft, IconChevronRight, IconCoin, IconCopy, IconHistory, IconPresent, IconTask } from "@/components/icons";
+import { IconChevronLeft, IconChevronRight, IconCoin, IconAlert, IconBook, IconCopy, IconHistory, IconPresent, IconTask } from "@/components/icons";
 import { AttendanceMarks, HomeworkMarks, Meter, SaveChip } from "@/components/ui";
-import { useData } from "@/lib/data";
+import { useData, type PlanPatch } from "@/lib/data";
 import { addDays, formatDay, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic } from "@/lib/progress";
 import { scoreLessons } from "@/lib/scoring";
@@ -40,38 +40,70 @@ export default function TodayPage() {
     [activeStudents, group],
   );
 
-  // ---- group homework (stored in Supabase, autosaved) ---------------------
+  // ---- lesson info: topic taught + homework assigned (stored in Supabase, autosaved) -----
   const plan = plans.find((p) => p.group_id === group?.id && p.lesson_date === date);
-  const [draft, setDraft] = useState(plan?.homework ?? "");
-  const pending = useRef<{ groupId: string; date: string; text: string } | null>(null);
+  const [topicDraft, setTopicDraft] = useState(plan?.topic ?? "");
+  const [hwDraft, setHwDraft] = useState(plan?.homework ?? "");
+  const [planState, setPlanState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  type Pending = { groupId: string; date: string; patch: PlanPatch };
+  const pending = useRef<Pending | null>(null);
+  const failed = useRef<Pending | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePlanRef = useRef(savePlan);
   useEffect(() => {
     savePlanRef.current = savePlan;
   });
 
+  const send = useCallback(async (p: Pending) => {
+    setPlanState("saving");
+    const ok = await savePlanRef.current(p.groupId, p.date, p.patch);
+    if (ok) {
+      if (failed.current?.groupId === p.groupId && failed.current.date === p.date) failed.current = null;
+      setPlanState(pending.current ? "saving" : "saved");
+    } else {
+      const f = failed.current;
+      failed.current =
+        f && f.groupId === p.groupId && f.date === p.date ? { ...p, patch: { ...f.patch, ...p.patch } } : p;
+      setPlanState("error");
+    }
+  }, []);
+
   const flush = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     const p = pending.current;
     pending.current = null;
-    if (p) void savePlanRef.current(p.groupId, p.date, p.text);
-  }, []);
+    if (p) void send(p);
+  }, [send]);
+
+  const retry = useCallback(() => {
+    const f = failed.current;
+    failed.current = null;
+    if (f) void send(f);
+  }, [send]);
 
   const groupKey = group?.id ?? "";
   useEffect(() => {
-    // Switching group or day: save what was typed, then show the stored text for the new one.
-    const stored = plans.find((p) => p.group_id === groupKey && p.lesson_date === date)?.homework ?? "";
-    setDraft(stored);
+    // Switching group or day: save what was typed, then show the stored values for the new one.
+    const stored = plans.find((p) => p.group_id === groupKey && p.lesson_date === date);
+    setTopicDraft(stored?.topic ?? "");
+    setHwDraft(stored?.homework ?? "");
+    setPlanState("idle");
     return () => flush();
     // `plans` is intentionally not a dependency: remote updates must not overwrite what is being typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupKey, date, flush]);
 
-  function onDraft(text: string) {
-    setDraft(text);
+  function onField(field: keyof PlanPatch, text: string) {
+    if (field === "topic") setTopicDraft(text);
+    else setHwDraft(text);
     if (!group) return;
-    pending.current = { groupId: group.id, date, text };
+    const cur = pending.current;
+    pending.current = {
+      groupId: group.id,
+      date,
+      patch: { ...(cur && cur.groupId === group.id && cur.date === date ? cur.patch : {}), [field]: text },
+    };
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(flush, PLAN_DEBOUNCE_MS);
   }
@@ -114,7 +146,7 @@ export default function TodayPage() {
   function createArgs(row: (typeof rows)[number]) {
     return {
       topicId: row.planned?.id ?? null,
-      topicTitle: row.planned?.title ?? (draft.trim() ? draft.trim().slice(0, 200) : "Dars"),
+      topicTitle: topicDraft.trim() ? topicDraft.trim().slice(0, 200) : (row.planned?.title ?? "Dars"),
     };
   }
 
@@ -188,33 +220,74 @@ export default function TodayPage() {
         <div className="plan">
           <div className="plan__head">
             <span className="plan__title">
-              <IconTask aria-hidden /> Uy vazifasi
+              <IconBook aria-hidden /> Dars ma&apos;lumoti
             </span>
-            <span className="hint">Butun guruh uchun, avtomatik saqlanadi</span>
+            <span className="plan__status" role="status" aria-live="polite" data-state={planState}>
+              {planState === "saving" && "Saqlanmoqda…"}
+              {planState === "saved" && "Saqlandi"}
+              {planState === "error" && (
+                <>
+                  <IconAlert aria-hidden /> Saqlanmadi
+                  <button className="btn btn--sm" onClick={retry}>
+                    Qayta urinish
+                  </button>
+                </>
+              )}
+              {planState === "idle" && <span className="hint">Butun guruh uchun, avtomatik saqlanadi</span>}
+            </span>
           </div>
-          <textarea
-            className="input"
-            value={draft}
-            rows={2}
-            maxLength={1000}
-            aria-label="Guruh uy vazifasi"
-            placeholder="Masalan: 12-mashq, 45-bet"
-            onChange={(e) => onDraft(e.target.value)}
-            onBlur={flush}
-          />
+          <div className="plan__fields">
+            <label className="field">
+              <span className="field__label">
+                <IconBook aria-hidden /> Bugun o&apos;tilgan mavzu
+              </span>
+              <textarea
+                className="input"
+                value={topicDraft}
+                rows={2}
+                maxLength={300}
+                placeholder="Masalan: Present Simple — Positive and Negative Forms"
+                onChange={(e) => onField("topic", e.target.value)}
+                onBlur={flush}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">
+                <IconTask aria-hidden /> Uyga vazifa
+              </span>
+              <textarea
+                className="input"
+                value={hwDraft}
+                rows={2}
+                maxLength={1000}
+                placeholder="Masalan: Round Up 2, 45-bet, 1–5-mashqlar"
+                onChange={(e) => onField("homework", e.target.value)}
+                onBlur={flush}
+              />
+            </label>
+          </div>
           {previousPlans.length > 0 && (
             <details className="plan__prev">
               <summary>
-                <IconHistory aria-hidden /> Oldingi vazifalar
+                <IconHistory aria-hidden /> Oldingi darslar
               </summary>
               <div className="plan__list">
                 {previousPlans.map((p) => (
                   <div className="plan__item" key={p.id}>
                     <time>{formatShort(p.lesson_date)}</time>
-                    <span>{p.homework}</span>
-                    <button className="btn btn--ghost btn--sm" onClick={() => onDraft(p.homework)} title="Bugungi vazifaga nusxalash">
-                      <IconCopy aria-hidden /> Nusxa
-                    </button>
+                    <span>
+                      {p.topic && <strong>{p.topic}</strong>}
+                      {p.homework && <small>{p.homework}</small>}
+                    </span>
+                    {p.homework && (
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => onField("homework", p.homework ?? "")}
+                        title="Vazifani bugunga nusxalash"
+                      >
+                        <IconCopy aria-hidden /> Nusxa
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

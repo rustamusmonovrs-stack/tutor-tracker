@@ -35,6 +35,12 @@ export interface MarkArgs {
   topicTitle?: string;
 }
 
+/** Partial update of a day's lesson info. `undefined` keeps the stored value, empty text clears it. */
+export interface PlanPatch {
+  topic?: string;
+  homework?: string;
+}
+
 interface DataApi {
   status: Status;
   error: string | null;
@@ -63,7 +69,8 @@ interface DataApi {
   markLesson: (args: MarkArgs) => Promise<boolean>;
   /** Mark attendance for many students at once (one request). */
   markAttendanceBulk: (students: Student[], date: string, attendance: Attendance) => Promise<boolean>;
-  savePlan: (groupId: string, date: string, homework: string) => Promise<boolean>;
+  /** Saves only the fields present in `patch` (empty string clears). Writes for one group/day run in order. */
+  savePlan: (groupId: string, date: string, patch: PlanPatch) => Promise<boolean>;
 
   addGroup: (name: string) => Promise<boolean>;
   renameGroup: (id: string, name: string) => Promise<boolean>;
@@ -93,7 +100,7 @@ const GROUP_COLS = "id,name,archived_at,created_at";
 const STUDENT_COLS = "id,group_id,name,archived_at,created_at";
 const TOPIC_COLS = "id,student_id,position,title";
 const LESSON_COLS = "id,student_id,topic_id,topic_title,lesson_date,attendance,homework,created_at";
-const PLAN_COLS = "id,group_id,lesson_date,homework,updated_at";
+const PLAN_COLS = "id,group_id,lesson_date,topic,homework,updated_at";
 const FALLBACK_TITLE = "Dars";
 
 function messageOf(e: unknown): string {
@@ -135,6 +142,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const lessonsRef = useRef(lessons);
   const topicsRef = useRef(topics);
+  const plansRef = useRef<LessonPlan[]>([]);
+  const planQueue = useRef(new Map<string, Promise<unknown>>());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastSeq = useRef(0);
   useEffect(() => {
@@ -176,7 +185,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setStudents(s);
       setTopics(t);
       setLessons(l);
-      setPlans(p);
+      plansRef.current = p.map((r) => ({ ...r, topic: r.topic ?? null, homework: r.homework ?? null }));
+      setPlans(plansRef.current);
       setError(null);
       setStatus("ready");
     } catch (e) {
@@ -320,39 +330,50 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
   const savePlan = useCallback<DataApi["savePlan"]>(
-    async (groupId, date, homework) => {
-      const sb = getSupabase();
-      const text = homework.trim();
-      const prev = plans.find((p) => p.group_id === groupId && p.lesson_date === date);
-      beginWrite();
-      if (!text) {
-        if (!prev) {
-          endWrite(true);
+    (groupId, date, patch) => {
+      const key = `${groupId}|${date}`;
+      const norm = (v: string | undefined) => (v === undefined ? undefined : v.trim() || null);
+      const run = async (): Promise<boolean> => {
+        const sb = getSupabase();
+        const prev = plansRef.current.find((p) => p.group_id === groupId && p.lesson_date === date);
+        const t = norm(patch.topic);
+        const h = norm(patch.homework);
+        const nextTopic = t === undefined ? (prev?.topic ?? null) : t;
+        const nextHw = h === undefined ? (prev?.homework ?? null) : h;
+        beginWrite();
+        if (nextTopic === null && nextHw === null) {
+          if (!prev) {
+            endWrite(true);
+            return true;
+          }
+          const { error: err } = await sb.from("lesson_plans").delete().eq("id", prev.id);
+          endWrite(!err);
+          if (err) return fail(err, "Dars ma'lumoti saqlanmadi");
+          plansRef.current = plansRef.current.filter((p) => p.id !== prev.id);
+          setPlans(plansRef.current);
           return true;
         }
-        setPlans((ps) => ps.filter((p) => p.id !== prev.id));
-        const { error: err } = await sb.from("lesson_plans").delete().eq("id", prev.id);
-        endWrite(!err);
-        if (err) {
-          setPlans((ps) => [...ps, prev]);
-          return fail(err, "Vazifa saqlanmadi");
-        }
+        const payload: Record<string, unknown> = { group_id: groupId, lesson_date: date, updated_at: new Date().toISOString() };
+        if (t !== undefined) payload.topic = t;
+        if (h !== undefined) payload.homework = h;
+        const { data, error: err } = await sb
+          .from("lesson_plans")
+          .upsert(payload, { onConflict: "group_id,lesson_date" })
+          .select(PLAN_COLS)
+          .single();
+        endWrite(!(err || !data));
+        if (err || !data) return fail(err, "Dars ma'lumoti saqlanmadi");
+        const row = { topic: null, homework: null, ...(data as object) } as LessonPlan;
+        plansRef.current = [...plansRef.current.filter((p) => !(p.group_id === groupId && p.lesson_date === date)), row];
+        setPlans(plansRef.current);
         return true;
-      }
-      const { data, error: err } = await sb
-        .from("lesson_plans")
-        .upsert(
-          { group_id: groupId, lesson_date: date, homework: text, updated_at: new Date().toISOString() },
-          { onConflict: "group_id,lesson_date" },
-        )
-        .select(PLAN_COLS)
-        .single();
-      endWrite(!(err || !data));
-      if (err || !data) return fail(err, "Vazifa saqlanmadi");
-      setPlans((ps) => [...ps.filter((p) => !(p.group_id === groupId && p.lesson_date === date)), data as LessonPlan]);
-      return true;
+      };
+      // Writes for the same group+day run strictly in order, so an older request can never land after a newer one.
+      const chained = (planQueue.current.get(key) ?? Promise.resolve()).then(run, run);
+      planQueue.current.set(key, chained);
+      return chained;
     },
-    [plans, fail],
+    [fail],
   );
 
   // ---- groups ------------------------------------------------------------

@@ -47,6 +47,7 @@ function seed(): Tables {
   const lessons: Row[] = [];
   const plans: Row[] = [];
   const schedule = [[0, 2, 4], [1, 3], [0, 3]];
+  const topicTexts = ["Present Simple — Positive and Negative Forms", "Past Simple: regular verbs", "Family vocabulary", "Reading: A day at school", "Modal verbs: can / must"];
   const homeworkTexts = ["12-mashq, 45-bet", "Insho: Mening oilam", "Lug'at: 20 ta so'z", "Test 3 ni yeching", "Grammatika: 5-bo'lim"];
   const start = addDays(weekStart(today), -35);
   for (let d = start; d < today; d = addDays(d, 1)) {
@@ -57,6 +58,7 @@ function seed(): Tables {
         id: uuid(),
         group_id: g.id,
         lesson_date: d,
+        topic: topicTexts[Math.floor(rnd() * topicTexts.length)],
         homework: homeworkTexts[Math.floor(rnd() * homeworkTexts.length)],
         updated_at: created,
       });
