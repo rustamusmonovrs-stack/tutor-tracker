@@ -47,6 +47,7 @@ function seed(): Tables {
   const lessons: Row[] = [];
   const plans: Row[] = [];
   const schedule = [[0, 2, 4], [1, 3], [0, 3]];
+  const topicTexts = ["Present Simple — Positive and Negative Forms", "Past Simple: regular verbs", "Family vocabulary", "Reading: A day at school", "Modal verbs: can / must"];
   const homeworkTexts = ["12-mashq, 45-bet", "Insho: Mening oilam", "Lug'at: 20 ta so'z", "Test 3 ni yeching", "Grammatika: 5-bo'lim"];
   const start = addDays(weekStart(today), -35);
   for (let d = start; d < today; d = addDays(d, 1)) {
@@ -57,6 +58,7 @@ function seed(): Tables {
         id: uuid(),
         group_id: g.id,
         lesson_date: d,
+        topic: topicTexts[Math.floor(rnd() * topicTexts.length)],
         homework: homeworkTexts[Math.floor(rnd() * homeworkTexts.length)],
         updated_at: created,
       });
@@ -162,6 +164,10 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     this.one = true;
     return this;
   }
+  maybeSingle() {
+    this.one = true;
+    return this;
+  }
 
   then<R1, R2>(
     onfulfilled?: ((v: { data: unknown; error: { message: string } | null }) => R1 | PromiseLike<R1>) | null,
@@ -183,6 +189,15 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     if (this.op !== "select" && win.__demoFail) {
       return { data: null, error: { message: "Demo: tarmoq xatosi" } };
     }
+    const noContent = (r: Row) => r.topic == null && r.homework == null;
+    if (this.table === "lesson_plans") {
+      const bad = { data: null, error: { message: 'new row for relation "lesson_plans" violates check constraint "lesson_plans_has_content"' } };
+      if (this.op === "insert" || this.op === "upsert") {
+        const items = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
+        if (items.some(noContent)) return bad; // Postgres checks the proposed row before ON CONFLICT
+      }
+      if (this.op === "update" && noContent({ ...(rows.find((r) => this.matches(r)) ?? {}), ...(this.payload as Row) })) return bad;
+    }
     let out: Row[] = [];
     if (this.op === "select") {
       out = rows.filter((r) => this.matches(r)).slice(this.from, this.to === Infinity ? undefined : this.to + 1);
@@ -191,7 +206,8 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       out = items.map((i) => ({ id: uuid(), archived_at: null, created_at: new Date().toISOString(), ...i }));
       rows.push(...out);
     } else if (this.op === "update") {
-      rows.filter((r) => this.matches(r)).forEach((r) => Object.assign(r, this.payload));
+      out = rows.filter((r) => this.matches(r));
+      out.forEach((r) => Object.assign(r, this.payload));
     } else if (this.op === "delete") {
       const gone = rows.filter((r) => this.matches(r));
       t[this.table] = rows.filter((r) => !gone.includes(r));

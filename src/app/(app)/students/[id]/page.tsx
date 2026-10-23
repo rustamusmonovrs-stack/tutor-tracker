@@ -43,6 +43,7 @@ export default function StudentPage() {
     renameTopic,
     removeTopic,
     moveTopic,
+    plans,
   } = useData();
 
   const student = students.find((s) => s.id === id);
@@ -83,6 +84,9 @@ export default function StudentPage() {
     .filter((s) => s.lesson.lesson_date >= addDays(today, -29))
     .reduce((t, s) => t + s.coins, 0);
   const weekCoins = weekly[WEEKS - 1].sum.coins;
+
+  const planFor = (date: string) =>
+    plans.find((p) => p.group_id === student?.group_id && p.lesson_date === date);
 
   const history = useMemo(
     () =>
@@ -244,7 +248,12 @@ export default function StudentPage() {
           history.slice(0, shown).map(({ lesson, coins }) => (
             <div key={lesson.id} className="hist">
               <time dateTime={lesson.lesson_date}>{formatShort(lesson.lesson_date)}</time>
-              <span style={{ overflowWrap: "anywhere", color: "var(--ink-2)" }}>{lesson.topic_title}</span>
+              <span style={{ overflowWrap: "anywhere", color: "var(--ink-2)", display: "grid", gap: 2 }}>
+                {planFor(lesson.lesson_date)?.topic ?? lesson.topic_title}
+                {planFor(lesson.lesson_date)?.homework && (
+                  <small style={{ color: "var(--ink-3)" }}>Vazifa: {planFor(lesson.lesson_date)?.homework}</small>
+                )}
+              </span>
               <div className="hist__marks">
                 <AttendanceMarks
                   name={`${student.name}, ${lesson.lesson_date}`}

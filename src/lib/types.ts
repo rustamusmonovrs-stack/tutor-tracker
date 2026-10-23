@@ -41,11 +41,12 @@ export interface Lesson {
   created_at: string;
 }
 
-/** Homework description for a whole group on one day. */
+/** What was taught (topic) and what is assigned (homework) for a whole group on one day. */
 export interface LessonPlan {
   id: string;
   group_id: string;
   lesson_date: string;
-  homework: string;
+  topic: string | null;
+  homework: string | null;
   updated_at: string;
 }

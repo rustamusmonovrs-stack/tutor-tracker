@@ -713,6 +713,53 @@ textarea.input {
   color: var(--brand);
 }
 
+.plan__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 620;
+  color: var(--ink-2);
+}
+
+.field__label svg {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-3);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 56px;
+}
+
+.plan__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+.plan__status[data-state="saved"] { color: var(--ok, #1a7f4b); }
+.plan__status[data-state="error"] { color: var(--bad, #b42318); font-weight: 600; }
+.plan__status svg { width: 14px; height: 14px; }
+
+.plan__item span { display: grid; gap: 2px; }
+.plan__item small { color: var(--ink-3); font-size: var(--fs-sm); }
+
 .plan__prev {
   border-top: 1px solid var(--line);
   padding-top: var(--s2);
@@ -1446,5 +1493,11 @@ dialog.dialog[open] {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .plan__fields {
+    grid-template-columns: 1fr;
   }
 }
