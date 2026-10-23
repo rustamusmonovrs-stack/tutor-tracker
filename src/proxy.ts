@@ -9,8 +9,8 @@ export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  // Not configured yet: let the app render its own setup message.
-  if (!url || !key) return NextResponse.next({ request });
+  // Not configured yet (or local demo mode with in-memory data): let the app render itself.
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === "1" || !url || !key) return NextResponse.next({ request });
 
   let response = NextResponse.next({ request });
 

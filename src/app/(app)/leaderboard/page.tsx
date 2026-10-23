@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Avatar } from "@/components/Avatar";
+import { IconCoin } from "@/components/icons";
 import { STUCK_AFTER } from "@/lib/config";
 import { useData } from "@/lib/data";
 import { addDays, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic, repeatCount } from "@/lib/progress";
-import { buildGroupStandings, buildStandings, type DateRange } from "@/lib/scoring";
+import { buildGroupStandings, buildStandings, inRange, type DateRange } from "@/lib/scoring";
 
 type Period = "week" | "month" | "all";
 type Scope = "all" | "groups" | string; // string = a group id
 
 const PERIODS: { id: Period; label: string }[] = [
-  { id: "week", label: "Weekly" },
-  { id: "month", label: "30 days" },
-  { id: "all", label: "Overall" },
+  { id: "week", label: "Hafta" },
+  { id: "month", label: "30 kun" },
+  { id: "all", label: "Hammasi" },
 ];
 
 export default function LeaderboardPage() {
@@ -44,6 +46,12 @@ export default function LeaderboardPage() {
     [activeGroups, activeStudents, lessons, range],
   );
 
+  // "No results" means no lesson has been marked in this period for the people shown.
+  const hasResults = useMemo(() => {
+    const ids = new Set(standings.map((s) => s.student.id));
+    return lessons.some((l) => ids.has(l.student_id) && inRange(l.lesson_date, range));
+  }, [lessons, standings, range]);
+
   const lastWeekStar = useMemo(() => {
     const from = addDays(thisWeek, -7);
     const top = buildStandings(activeStudents, lessons, { from, to: addDays(from, 6) });
@@ -67,23 +75,23 @@ export default function LeaderboardPage() {
 
   const periodSub =
     period === "week"
-      ? `${formatShort(thisWeek)} – ${formatShort(addDays(thisWeek, 6))}, resets every Monday`
+      ? `${formatShort(thisWeek)} – ${formatShort(addDays(thisWeek, 6))} · har dushanba yangilanadi`
       : period === "month"
-        ? "Last 30 days"
-        : "All time";
+        ? "Oxirgi 30 kun"
+        : "Butun davr";
 
   if (!activeStudents.length) {
     return (
       <>
         <div className="page-head">
-          <h1 className="page-title">Leaderboard</h1>
+          <h1 className="page-title">Reyting</h1>
         </div>
-        <div className="sheet empty">
-          <strong>Nothing to rank yet</strong>
-          <p>Add students and mark a lesson. Coins appear here automatically.</p>
+        <div className="card empty">
+          <strong>Hali natijalar mavjud emas.</strong>
+          <p>O&apos;quvchi qo&apos;shing va birinchi darsni belgilang, tangalar shu yerda paydo bo&apos;ladi.</p>
           <p style={{ marginTop: 14 }}>
             <Link className="btn btn--primary" href="/students">
-              Add students
+              O&apos;quvchi qo&apos;shish
             </Link>
           </p>
         </div>
@@ -95,22 +103,22 @@ export default function LeaderboardPage() {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">Leaderboard</h1>
+          <h1 className="page-title">Reyting</h1>
           <p className="page-sub">{periodSub}</p>
         </div>
       </div>
 
-      <div className="controls">
-        <div className="seg" role="group" aria-label="Period">
+      <div className="toolbar">
+        <div className="seg" role="group" aria-label="Davr">
           {PERIODS.map((p) => (
             <button key={p.id} className="seg__btn" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
               {p.label}
             </button>
           ))}
         </div>
-        <div className="seg" role="group" aria-label="Scope">
+        <div className="seg" role="group" aria-label="Guruh">
           <button className="seg__btn" aria-pressed={scope === "all"} onClick={() => setScope("all")}>
-            Everyone
+            Hamma
           </button>
           {activeGroups.map((g) => (
             <button key={g.id} className="seg__btn" aria-pressed={scope === g.id} onClick={() => setScope(g.id)}>
@@ -118,60 +126,72 @@ export default function LeaderboardPage() {
             </button>
           ))}
           <button className="seg__btn" aria-pressed={scope === "groups"} onClick={() => setScope("groups")}>
-            Groups
+            Guruhlar
           </button>
         </div>
       </div>
 
       {period === "week" && lastWeekStar && scope !== "groups" && (
         <p className="callout">
-          <span aria-hidden>★</span>
-          <span>
-            Last week&apos;s star: {lastWeekStar.names.join(", ")} ({lastWeekStar.coins} coins)
-          </span>
+          <IconCoin width={18} height={18} aria-hidden />
+          O&apos;tgan hafta yulduzi: {lastWeekStar.names.join(", ")} ({lastWeekStar.coins} tanga)
         </p>
       )}
 
-      <div className="sheet">
-        {scope === "groups" ? (
-          <ol className="rank-list">
+      <div className="card">
+        {!hasResults ? (
+          <div className="empty">
+            <strong>Hali natijalar mavjud emas.</strong>
+            <p>Bu davrda hali birorta dars belgilanmagan.</p>
+          </div>
+        ) : scope === "groups" ? (
+          <ol className="list">
             {groupStandings.map((g) => (
-              <li key={g.group.id} className={`rank${g.rank <= 3 && g.average > 0 ? " rank--top" : ""}`}>
+              <li key={g.group.id} className={`rank rank--simple${g.rank <= 3 && g.average > 0 ? " rank--top" : ""}`}>
                 <span className="rank__pos">{g.rank}</span>
-                <span className="rank__name">
-                  {g.group.name}
-                  <span className="rank__sub">
-                    {g.students} students · {g.total} coins total
+                <span className="row__who">
+                  <span style={{ minWidth: 0 }}>
+                    <span className="row__main">{g.group.name}</span>
+                    <span className="row__sub">
+                      {g.students} o&apos;quvchi · jami {g.total} tanga
+                    </span>
                   </span>
                 </span>
                 <span className="rank__score">
                   {g.average.toFixed(1)}
-                  <small>avg per student</small>
+                  <small>o&apos;rtacha</small>
                 </span>
               </li>
             ))}
           </ol>
         ) : standings.length === 0 ? (
           <div className="empty">
-            <strong>No students in this group</strong>
+            <strong>Bu guruhda o&apos;quvchi yo&apos;q</strong>
           </div>
         ) : (
-          <ol className="rank-list">
+          <ol className="list">
             {standings.map((s) => (
               <li key={s.student.id} className={`rank${s.rank <= 3 && s.coins > 0 ? " rank--top" : ""}`}>
                 <span className="rank__pos">{s.rank}</span>
-                <span className="rank__name">
-                  <Link href={`/students/${s.student.id}`} style={{ color: "inherit", textDecoration: "none" }}>
-                    {s.student.name}
-                  </Link>
-                  <span className="rank__sub">
-                    {scopeGroup ? "" : `${groupName.get(s.student.group_id) ?? ""} · `}
-                    {s.full} full · {s.lessons} lessons
+                <Link href={`/students/${s.student.id}`} className="row__who" style={{ color: "inherit", textDecoration: "none" }}>
+                  <Avatar name={s.student.name} />
+                  <span style={{ minWidth: 0 }}>
+                    <span className="row__main">{s.student.name}</span>
+                    <span className="row__sub">
+                      {scopeGroup ? "" : `${groupName.get(s.student.group_id) ?? ""} · `}
+                      {s.full} to&apos;liq · {s.attended} dars
+                    </span>
                   </span>
+                </Link>
+                <span className="rank__meta">
+                  {s.full} to&apos;liq
+                </span>
+                <span className="rank__meta">
+                  {s.attended}/{s.attended + s.absent} davomat
                 </span>
                 <span className="rank__score">
                   {s.coins}
-                  <small>coins</small>
+                  <small>tanga</small>
                 </span>
               </li>
             ))}
@@ -181,20 +201,21 @@ export default function LeaderboardPage() {
 
       {attention.length > 0 && (
         <>
-          <h2 className="section-title">Needs attention</h2>
+          <h2 className="section-title">E&apos;tibor kerak</h2>
           <p className="hint" style={{ marginBottom: 8 }}>
-            Current topic was repeated. {STUCK_AFTER}+ times means it is time to try a different approach.
+            Joriy mavzu qayta o&apos;tilgan. {STUCK_AFTER}+ marta bo&apos;lsa, boshqa yondashuv sinab ko&apos;ring.
           </p>
-          <div className="sheet">
+          <div className="card">
             {attention.map((a) => (
-              <Link key={a.student.id} href={`/students/${a.student.id}`} className="row-link">
-                <span>
-                  <span className="row-link__main">{a.student.name}</span>
-                  <span className="row-link__sub">{a.topic?.title}</span>
+              <Link key={a.student.id} href={`/students/${a.student.id}`} className="row">
+                <span className="row__who">
+                  <Avatar name={a.student.name} />
+                  <span style={{ minWidth: 0 }}>
+                    <span className="row__main">{a.student.name}</span>
+                    <span className="row__sub">{a.topic?.title}</span>
+                  </span>
                 </span>
-                <span className={`flag${a.repeats >= STUCK_AFTER ? "" : " flag--soft"}`}>
-                  {a.repeats}× repeated
-                </span>
+                <span className={`flag${a.repeats >= STUCK_AFTER ? "" : " flag--soft"}`}>{a.repeats}× qaytarildi</span>
               </Link>
             ))}
           </div>

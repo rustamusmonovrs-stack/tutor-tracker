@@ -1,9 +1,8 @@
-export type LessonResult =
-  | "full"
-  | "partial"
-  | "not_done"
-  | "not_understood"
-  | "absent";
+/** Legacy single-status value (column kept for rollback; no longer written by the app). */
+export type LegacyResult = "full" | "partial" | "not_done" | "not_understood" | "absent";
+
+export type Attendance = "present" | "absent";
+export type Homework = "full" | "partial" | "not_done";
 
 export interface Group {
   id: string;
@@ -27,12 +26,26 @@ export interface Topic {
   title: string;
 }
 
+/**
+ * One row per student per day. `attendance` and `homework` are independent:
+ * null means "not marked yet" (never the same as absent / not done).
+ */
 export interface Lesson {
   id: string;
   student_id: string;
   topic_id: string | null;
   topic_title: string;
   lesson_date: string; // YYYY-MM-DD, Asia/Tashkent calendar day
-  result: LessonResult;
+  attendance: Attendance | null;
+  homework: Homework | null;
   created_at: string;
+}
+
+/** Homework description for a whole group on one day. */
+export interface LessonPlan {
+  id: string;
+  group_id: string;
+  lesson_date: string;
+  homework: string;
+  updated_at: string;
 }

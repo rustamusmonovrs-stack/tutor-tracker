@@ -40,3 +40,11 @@ npm run build
 - Next.js 16: the auth guard is `src/proxy.ts` (formerly `middleware.ts`).
 - One lesson record per student per day. Tapping the active result again removes it (with Undo).
 - Off-plan topics (typed on the Today screen) earn coins but do not advance the plan.
+
+## Jurnal 2.0 (branch `crm-2-0`)
+
+- Attendance (`Keldi / Kelmadi`) and homework (`To'liq / Chala / Qilmadi`) are stored separately; empty = not marked.
+- Group homework text lives in `lesson_plans` (per group, per day). Coins still derive from homework only.
+- **Database migration is prepared but NOT applied:** `supabase/migrations/20261023_attendance_homework.sql`
+  (rollback next to it). The new code needs it; deploy only after it has run.
+- `npm run dev:demo` runs the app on in-memory demo data (no Supabase, never used in production).

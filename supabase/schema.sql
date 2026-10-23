@@ -39,10 +39,23 @@ create table if not exists public.lessons (
   topic_id    uuid references public.topics (id) on delete set null,
   topic_title text not null check (char_length(btrim(topic_title)) between 1 and 200),
   lesson_date date not null,
-  result      text not null check (result in ('full', 'partial', 'not_done', 'not_understood', 'absent')),
+  attendance  text check (attendance in ('present', 'absent')),          -- null = not marked
+  homework    text check (homework in ('full', 'partial', 'not_done')),  -- null = not graded
+  result      text,                                                       -- legacy single status, unused
   created_at  timestamptz not null default now(),
+  constraint lessons_has_mark check (attendance is not null or homework is not null),
   -- one record per student per day: marking again replaces (upsert), never duplicates
   unique (student_id, lesson_date)
+);
+
+create table if not exists public.lesson_plans (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  group_id    uuid not null references public.groups (id) on delete cascade,
+  lesson_date date not null,
+  homework    text not null check (char_length(btrim(homework)) between 1 and 1000),
+  updated_at  timestamptz not null default now(),
+  unique (group_id, lesson_date)
 );
 
 -- Indexes for foreign keys, RLS owner checks and date-range queries
@@ -54,18 +67,21 @@ create index if not exists topics_student_idx on public.topics   (student_id, po
 create index if not exists lessons_owner_idx  on public.lessons  (owner_id);
 create index if not exists lessons_topic_idx  on public.lessons  (topic_id);
 create index if not exists lessons_date_idx   on public.lessons  (lesson_date);
+create index if not exists lesson_plans_owner_idx on public.lesson_plans (owner_id);
+create index if not exists lesson_plans_date_idx  on public.lesson_plans (group_id, lesson_date desc);
 
 -- Row Level Security
 alter table public.groups   enable row level security;
 alter table public.students enable row level security;
 alter table public.topics   enable row level security;
 alter table public.lessons  enable row level security;
+alter table public.lesson_plans enable row level security;
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['groups', 'students', 'topics', 'lessons'] loop
+  foreach t in array array['groups', 'students', 'topics', 'lessons', 'lesson_plans'] loop
     execute format('drop policy if exists "%1$s_owner_all" on public.%1$I', t);
     execute format(
       'create policy "%1$s_owner_all" on public.%1$I
@@ -78,4 +94,4 @@ begin
 end $$;
 
 -- Nothing is readable without signing in
-revoke all on public.groups, public.students, public.topics, public.lessons from anon;
+revoke all on public.groups, public.students, public.topics, public.lessons, public.lesson_plans from anon;

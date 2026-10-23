@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { IconPeople, IconRank, IconToday } from "@/components/icons";
+import { IconPeople, IconRank, IconStats, IconToday } from "@/components/icons";
 import { useData } from "@/lib/data";
 
 const LINKS = [
-  { href: "/", label: "Today", icon: IconToday },
-  { href: "/leaderboard", label: "Leaderboard", icon: IconRank },
-  { href: "/students", label: "Students", icon: IconPeople },
+  { href: "/", label: "Bugun", icon: IconToday },
+  { href: "/leaderboard", label: "Reyting", icon: IconRank },
+  { href: "/students", label: "O'quvchilar", icon: IconPeople },
+  { href: "/stats", label: "Statistika", icon: IconStats },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -19,12 +20,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="shell">
       <nav className="nav" aria-label="Main">
-        <div className="nav__brand">Jurnal</div>
+        <div className="nav__brand">
+          <span className="nav__mark" aria-hidden>
+            J
+          </span>
+          <span className="nav__name">
+            Jurnal
+            <small>Ark Education</small>
+          </span>
+        </div>
         {LINKS.map(({ href, label, icon: Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link key={href} href={href} className="nav__link" aria-current={active ? "page" : undefined}>
-              <Icon />
+              <Icon aria-hidden />
               {label}
             </Link>
           );
@@ -33,29 +42,30 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main className="main">
         {status === "loading" && (
-          <div className="stack" aria-busy="true" aria-label="Loading">
+          <div className="stack" aria-busy="true" aria-label="Yuklanmoqda">
+            <div className="skeleton" style={{ height: 48, width: "40%" }} />
             <div className="skeleton" />
-            <div className="skeleton" />
+            <div className="skeleton" style={{ height: 280 }} />
           </div>
         )}
 
         {status === "error" && (
-          <div className="sheet sheet--pad stack" role="alert">
+          <div className="card card--pad stack" role="alert">
             <div>
-              <h1 className="page-title" style={{ fontSize: "1.35rem" }}>
+              <h1 className="page-title" style={{ fontSize: "var(--fs-xl)" }}>
                 Ma&apos;lumotlar yuklanmadi
               </h1>
               <p className="hint" style={{ marginTop: 6 }}>
                 {error}
               </p>
               <p className="hint" style={{ marginTop: 6 }}>
-                If this says a table does not exist, run <code>supabase/schema.sql</code> in the
-                Supabase SQL Editor. Otherwise check your connection and try again.
+                Agar jadval topilmadi degan xabar chiqsa, bazaga migratsiya hali qo&apos;llanmagan
+                (<code>supabase/migrations</code>). Aks holda internetni tekshirib, qayta urinib ko&apos;ring.
               </p>
             </div>
             <div>
               <button className="btn btn--primary" onClick={() => void reload()}>
-                Try again
+                Qayta urinish
               </button>
             </div>
           </div>

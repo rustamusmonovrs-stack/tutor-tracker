@@ -1,40 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { COINS, RESULT_META, RESULT_ORDER, STUCK_AFTER } from "@/lib/config";
-import { useData } from "@/lib/data";
-import { addDays, formatDay, todayISO, weekStart } from "@/lib/dates";
-import { currentTopic, repeatCount } from "@/lib/progress";
-import { buildStandings, scoreLessons } from "@/lib/scoring";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { IconChevronLeft, IconChevronRight, IconCoin, IconTask, ResultIcon } from "@/components/icons";
-import type { Lesson, LessonResult, Student, Topic } from "@/lib/types";
+import { IconChevronLeft, IconChevronRight, IconCoin, IconCopy, IconHistory, IconPresent, IconTask } from "@/components/icons";
+import { AttendanceMarks, HomeworkMarks, Meter, SaveChip } from "@/components/ui";
+import { useData } from "@/lib/data";
+import { addDays, formatDay, formatShort, todayISO, weekStart } from "@/lib/dates";
+import { currentTopic } from "@/lib/progress";
+import { scoreLessons } from "@/lib/scoring";
+import type { Attendance, Homework, Student } from "@/lib/types";
 
-interface RowModel {
-  student: Student;
-  existing: Lesson | undefined;
-  planned: Topic | null;
-  title: string;
-  position: number | null;
-  repeats: number;
-  weekCoins: number;
-  dayCoins: number | null;
-}
+const PLAN_DEBOUNCE_MS = 800;
 
 export default function TodayPage() {
   const data = useData();
-  const { activeGroups, activeStudents, lessonsByStudent, topicsByStudent, markLesson, clearLesson, notify, isSaving } = data;
+  const {
+    activeGroups,
+    activeStudents,
+    lessonsByStudent,
+    topicsByStudent,
+    plans,
+    markLesson,
+    markAttendanceBulk,
+    savePlan,
+    isSaving,
+  } = data;
 
   const today = todayISO();
   const [date, setDate] = useState(today);
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [custom, setCustom] = useState<Record<string, string>>({});
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  // Group task: one shared assignment for the whole group on this day.
-  const [task, setTask] = useState("");
-  const [taskDraft, setTaskDraft] = useState("");
 
   const group = activeGroups.find((g) => g.id === groupId) ?? activeGroups[0] ?? null;
   const roster = useMemo(
@@ -45,200 +40,105 @@ export default function TodayPage() {
     [activeStudents, group],
   );
 
-  const taskKey = group ? `jurnal:task:${group.id}:${date}` : null;
-
-  // Restore the task for this group + day: saved draft first, else the title already used by lessons that day.
+  // ---- group homework (stored in Supabase, autosaved) ---------------------
+  const plan = plans.find((p) => p.group_id === group?.id && p.lesson_date === date);
+  const [draft, setDraft] = useState(plan?.homework ?? "");
+  const pending = useRef<{ groupId: string; date: string; text: string } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savePlanRef = useRef(savePlan);
   useEffect(() => {
-    let value = "";
-    try {
-      if (taskKey) value = window.localStorage.getItem(taskKey) ?? "";
-    } catch {
-      /* storage unavailable: fall through */
-    }
-    if (!value) {
-      const counts = new Map<string, number>();
-      for (const s of roster) {
-        const l = (lessonsByStudent.get(s.id) ?? []).find((x) => x.lesson_date === date);
-        if (l && l.topic_id === null && l.topic_title !== "Mavzu kiritilmagan") {
-          counts.set(l.topic_title, (counts.get(l.topic_title) ?? 0) + 1);
-        }
-      }
-      value = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-    }
-    setTask(value);
-    setTaskDraft(value);
-    // Only re-run when the group/day changes, not on every lesson edit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskKey]);
-
-  const weekCoins = useMemo(() => {
-    const from = weekStart(date);
-    const standings = buildStandings(activeStudents, [...lessonsByStudent.values()].flat(), {
-      from,
-      to: addDays(from, 6),
-    });
-    return new Map(standings.map((s) => [s.student.id, s.coins]));
-  }, [activeStudents, lessonsByStudent, date]);
-
-  const rows: RowModel[] = roster.map((student) => {
-    const lessons = lessonsByStudent.get(student.id) ?? [];
-    const topics = topicsByStudent.get(student.id) ?? [];
-    const existing = lessons.find((l) => l.lesson_date === date);
-    const before = lessons.filter((l) => l.lesson_date < date);
-    const planned = currentTopic(topics, before);
-    const override = custom[`${student.id}:${date}`];
-    const title = existing?.topic_title ?? (task || override) ?? planned?.title ?? "";
-    const linked = existing?.topic_id ?? (task || override ? null : planned?.id ?? null);
-    const position = topics.find((t) => t.id === linked)?.position ?? null;
-    const dayCoins = existing
-      ? (scoreLessons(lessons).find((s) => s.lesson.id === existing.id)?.coins ?? null)
-      : null;
-    return {
-      student,
-      existing,
-      planned,
-      title,
-      position,
-      repeats: existing ? 0 : repeatCount(planned, before),
-      weekCoins: weekCoins.get(student.id) ?? 0,
-      dayCoins,
-    };
+    savePlanRef.current = savePlan;
   });
 
-  // Compact one-row-per-student layout when a group task is set, or when nobody here has a personal topic plan.
-  const groupMode = Boolean(task) || roster.every((s) => (topicsByStudent.get(s.id) ?? []).length === 0);
+  const flush = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const p = pending.current;
+    pending.current = null;
+    if (p) void savePlanRef.current(p.groupId, p.date, p.text);
+  }, []);
 
-  const marked = rows.filter((r) => r.existing).length;
+  const groupKey = group?.id ?? "";
+  useEffect(() => {
+    // Switching group or day: save what was typed, then show the stored text for the new one.
+    const stored = plans.find((p) => p.group_id === groupKey && p.lesson_date === date)?.homework ?? "";
+    setDraft(stored);
+    return () => flush();
+    // `plans` is intentionally not a dependency: remote updates must not overwrite what is being typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupKey, date, flush]);
 
-  async function onMark(row: RowModel, result: LessonResult) {
-    const { student, existing, planned } = row;
+  function onDraft(text: string) {
+    setDraft(text);
+    if (!group) return;
+    pending.current = { groupId: group.id, date, text };
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(flush, PLAN_DEBOUNCE_MS);
+  }
+
+  const previousPlans = useMemo(
+    () =>
+      plans
+        .filter((p) => p.group_id === group?.id && p.lesson_date < date)
+        .sort((a, b) => (a.lesson_date < b.lesson_date ? 1 : -1))
+        .slice(0, 8),
+    [plans, group, date],
+  );
+
+  // ---- rows ---------------------------------------------------------------
+  const scoredByStudent = useMemo(
+    () => new Map(roster.map((s) => [s.id, scoreLessons(lessonsByStudent.get(s.id) ?? [])])),
+    [roster, lessonsByStudent],
+  );
+  const weekFrom = weekStart(date);
+  const weekTo = addDays(weekFrom, 6);
+
+  const rows = roster.map((student) => {
     const lessons = lessonsByStudent.get(student.id) ?? [];
+    const existing = lessons.find((l) => l.lesson_date === date);
+    const scored = scoredByStudent.get(student.id) ?? [];
+    const dayCoins = existing ? (scored.find((s) => s.lesson.id === existing.id)?.coins ?? 0) : 0;
+    const weekCoins = scored
+      .filter((s) => s.lesson.lesson_date >= weekFrom && s.lesson.lesson_date <= weekTo)
+      .reduce((sum, s) => sum + s.coins, 0);
+    const topics = topicsByStudent.get(student.id) ?? [];
+    const planned = topics.length ? currentTopic(topics, lessons.filter((l) => l.lesson_date < date)) : null;
+    return { student, existing, dayCoins, weekCoins, planned };
+  });
 
-    // Tapping the active result again removes the mark (with Undo).
-    if (existing && existing.result === result) {
-      const previous = existing;
-      if (await clearLesson(existing)) {
-        notify(`${student.name}: belgi olib tashlandi`, {
-          action: {
-            label: "Undo",
-            run: () =>
-              void markLesson({
-                student,
-                date,
-                result: previous.result,
-                topicId: previous.topic_id,
-                topicTitle: previous.topic_title,
-              }),
-          },
-        });
-      }
-      return;
-    }
+  const attMarked = rows.filter((r) => r.existing?.attendance).length;
+  const hwGraded = rows.filter((r) => r.existing?.homework).length;
+  const present = rows.filter((r) => r.existing?.attendance === "present").length;
+  const hwTarget = Math.max(present, hwGraded);
 
-    const override = custom[`${student.id}:${date}`];
-    let topicId: string | null;
-    let topicTitle: string;
-    if (existing) {
-      topicId = existing.topic_id;
-      topicTitle = existing.topic_title;
-    } else if (task) {
-      topicId = null;
-      topicTitle = task;
-    } else if (override && override !== planned?.title) {
-      topicId = null;
-      topicTitle = override;
-    } else if (planned) {
-      topicId = planned.id;
-      topicTitle = planned.title;
-    } else {
-      topicId = null;
-      topicTitle = "Mavzu kiritilmagan";
-    }
-
-    // Preview the coins (including a streak bonus) before saving, for the confirmation toast.
-    const draftLesson: Lesson = {
-      id: existing?.id ?? "draft",
-      student_id: student.id,
-      topic_id: topicId,
-      topic_title: topicTitle,
-      lesson_date: date,
-      result,
-      created_at: existing?.created_at ?? new Date().toISOString(),
+  function createArgs(row: (typeof rows)[number]) {
+    return {
+      topicId: row.planned?.id ?? null,
+      topicTitle: row.planned?.title ?? (draft.trim() ? draft.trim().slice(0, 200) : "Dars"),
     };
-    const next = existing ? lessons.map((l) => (l.id === existing.id ? draftLesson : l)) : [...lessons, draftLesson];
-    const scored = scoreLessons(next).find((s) => s.lesson === draftLesson);
-
-    const ok = await markLesson({ student, date, result, topicId, topicTitle });
-    if (ok) {
-      const coins = scored?.coins ?? COINS[result];
-      const bonus = scored && scored.bonus > 0 ? " (streak bonus!)" : "";
-      notify(
-        coins > 0
-          ? `${student.name}: +${coins}${bonus}`
-          : `${student.name}: ${RESULT_META[result].label}`,
-      );
-    }
   }
 
-  async function commitTask(e?: FormEvent) {
-    e?.preventDefault();
-    const next = taskDraft.trim();
-    const prev = task;
-    if (next === prev) return;
-    setTask(next);
-    try {
-      if (taskKey) {
-        if (next) window.localStorage.setItem(taskKey, next);
-        else window.localStorage.removeItem(taskKey);
-      }
-    } catch {
-      /* storage unavailable: the task still applies for this session */
-    }
-    // Fix a typo everywhere: lessons already marked today with the old task get the new title.
-    if (prev && next) {
-      for (const s of roster) {
-        const l = (lessonsByStudent.get(s.id) ?? []).find((x) => x.lesson_date === date);
-        if (l && l.topic_id === null && l.topic_title === prev) {
-          await markLesson({ student: s, date, result: l.result, topicId: null, topicTitle: next });
-        }
-      }
-    }
+  function setAttendance(row: (typeof rows)[number], value: Attendance | null) {
+    void markLesson({ student: row.student, date, attendance: value, ...createArgs(row) });
+  }
+  function setHomework(row: (typeof rows)[number], value: Homework | null) {
+    void markLesson({ student: row.student, date, homework: value, ...createArgs(row) });
   }
 
-  function startEdit(row: RowModel) {
-    setEditing(row.student.id);
-    setDraft(row.title);
-  }
-
-  async function saveTopic(e: FormEvent, row: RowModel) {
-    e.preventDefault();
-    const title = draft.trim();
-    setEditing(null);
-    if (!title || title === row.title) return;
-    const { student, existing, planned } = row;
-    if (existing) {
-      await markLesson({
-        student,
-        date,
-        result: existing.result,
-        topicId: planned && title === planned.title ? planned.id : null,
-        topicTitle: title,
-      });
-    } else {
-      setCustom((c) => ({ ...c, [`${student.id}:${date}`]: title }));
-    }
-  }
+  const unmarked: Student[] = rows.filter((r) => !r.existing).map((r) => r.student);
 
   if (!activeGroups.length) {
     return (
       <>
-        <PageHead title="Today" sub="Start by creating a group" />
-        <div className="sheet empty">
-          <strong>No groups yet</strong>
-          <p>Create your groups and add students, then lessons are one tap each.</p>
+        <div className="page-head">
+          <h1 className="page-title">Bugun</h1>
+        </div>
+        <div className="card empty">
+          <strong>Hali guruh yo&apos;q</strong>
+          <p>Avval guruh va o&apos;quvchilarni qo&apos;shing, keyin davomat bir bosishda belgilanadi.</p>
           <p style={{ marginTop: 14 }}>
             <Link className="btn btn--primary" href="/students">
-              Set up groups
+              Guruh qo&apos;shish
             </Link>
           </p>
         </div>
@@ -250,36 +150,27 @@ export default function TodayPage() {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">{date === today ? "Today" : formatDay(date)}</h1>
+          <h1 className="page-title">{date === today ? "Bugun" : formatDay(date)}</h1>
           <p className="page-sub">
-            {date === today ? formatDay(date) : "Past lesson"}
-            {rows.length > 0 && ` · ${marked}/${rows.length} marked`}
+            {date === today ? formatDay(date) : "O'tgan dars"}
+            {group && ` · ${group.name} · ${roster.length} o'quvchi`}
           </p>
         </div>
-        <div className="day-nav">
-          <button className="icon-btn" aria-label="Previous day" onClick={() => setDate(addDays(date, -1))}>
+        <div className="page-actions">
+          <SaveChip />
+          <button className="icon-btn" aria-label="Oldingi kun" onClick={() => setDate(addDays(date, -1))}>
             <IconChevronLeft />
           </button>
-          <button
-            className="btn btn--quiet btn--sm"
-            onClick={() => setDate(today)}
-            disabled={date === today}
-            aria-label="Go to today"
-          >
-            Today
+          <button className="btn" onClick={() => setDate(today)} disabled={date === today}>
+            Bugun
           </button>
-          <button
-            className="icon-btn"
-            aria-label="Next day"
-            disabled={date >= today}
-            onClick={() => setDate(addDays(date, 1))}
-          >
+          <button className="icon-btn" aria-label="Keyingi kun" disabled={date >= today} onClick={() => setDate(addDays(date, 1))}>
             <IconChevronRight />
           </button>
         </div>
       </div>
 
-      <div className="seg" role="tablist" aria-label="Groups">
+      <div className="seg" role="tablist" aria-label="Guruhlar" style={{ marginBottom: 12 }}>
         {activeGroups.map((g) => (
           <button
             key={g.id}
@@ -293,125 +184,142 @@ export default function TodayPage() {
         ))}
       </div>
 
-      <form className="task-board" onSubmit={(e) => void commitTask(e)}>
-        <div className="task-board__main">
-          <label className="task-board__label" htmlFor="group-task">
-            <IconTask />
-            Bugungi vazifa
-          </label>
-          <input
-            id="group-task"
-            className="task-board__input"
-            value={taskDraft}
-            maxLength={200}
-            autoComplete="off"
-            placeholder="Hamma o'quvchi uchun vazifani yozing"
-            onChange={(e) => setTaskDraft(e.target.value)}
-            onBlur={() => void commitTask()}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="plan">
+          <div className="plan__head">
+            <span className="plan__title">
+              <IconTask aria-hidden /> Uy vazifasi
+            </span>
+            <span className="hint">Butun guruh uchun, avtomatik saqlanadi</span>
+          </div>
+          <textarea
+            className="input"
+            value={draft}
+            rows={2}
+            maxLength={1000}
+            aria-label="Guruh uy vazifasi"
+            placeholder="Masalan: 12-mashq, 45-bet"
+            onChange={(e) => onDraft(e.target.value)}
+            onBlur={flush}
           />
+          {previousPlans.length > 0 && (
+            <details className="plan__prev">
+              <summary>
+                <IconHistory aria-hidden /> Oldingi vazifalar
+              </summary>
+              <div className="plan__list">
+                {previousPlans.map((p) => (
+                  <div className="plan__item" key={p.id}>
+                    <time>{formatShort(p.lesson_date)}</time>
+                    <span>{p.homework}</span>
+                    <button className="btn btn--ghost btn--sm" onClick={() => onDraft(p.homework)} title="Bugungi vazifaga nusxalash">
+                      <IconCopy aria-hidden /> Nusxa
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
         {rows.length > 0 && (
-          <div className="task-board__progress" aria-label={`${marked} / ${rows.length} belgilandi`}>
-            <strong>
-              {marked}
-              <span>/{rows.length}</span>
-            </strong>
-            <span className="meter" role="presentation">
-              <span className="meter__fill" style={{ width: `${(marked / rows.length) * 100}%` }} />
-            </span>
+          <div className="progress-strip" style={{ borderTop: "1px solid var(--line)" }}>
+            <div className="progress-strip__item">
+              <div className="progress-strip__head">
+                <span>Davomat</span>
+                <strong>
+                  {attMarked}
+                  <small>/{rows.length}</small>
+                </strong>
+              </div>
+              <Meter value={attMarked} max={rows.length} />
+            </div>
+            <div className="progress-strip__item">
+              <div className="progress-strip__head">
+                <span>Vazifa baholandi</span>
+                <strong>
+                  {hwGraded}
+                  <small>/{hwTarget}</small>
+                </strong>
+              </div>
+              <Meter value={hwGraded} max={hwTarget} tone="ok" />
+            </div>
           </div>
         )}
-      </form>
+      </div>
 
-      <div className="sheet" style={{ marginTop: 14 }}>
+      <div className="card">
         {rows.length === 0 ? (
           <div className="empty">
-            <strong>No students in {group?.name}</strong>
-            <Link href="/students">Add students</Link>
+            <strong>{group?.name} guruhida o&apos;quvchi yo&apos;q</strong>
+            <Link href="/students">O&apos;quvchi qo&apos;shish</Link>
           </div>
         ) : (
-          <ul className={`roster${groupMode ? " roster--group" : ""}`}>
-            {rows.map((row) => {
-              const busy = isSaving(row.student.id);
-              const stuck = row.repeats >= STUCK_AFTER;
-              return (
-                <li className="student" key={row.student.id}>
-                  <div className="student__head">
-                    <Link href={`/students/${row.student.id}`} className="student__who">
-                      <Avatar name={row.student.name} />
-                      <span className="student__name">{row.student.name}</span>
-                    </Link>
-                    <span style={{ display: "flex", gap: 6 }}>
-                      {row.dayCoins !== null && row.dayCoins > 0 && (
-                        <span className="coins coins--day" title="Coins for this lesson">
-                          +{row.dayCoins}
+          <>
+            <div className="roster__head" aria-hidden={false}>
+              <span>O&apos;quvchi</span>
+              <span>Hafta</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                Davomat
+                {unmarked.length > 0 && (
+                  <button
+                    className="btn btn--sm"
+                    style={{ height: 24 }}
+                    onClick={() => void markAttendanceBulk(unmarked, date, "present")}
+                    title="Belgilanmaganlarni Keldi deb belgilash"
+                  >
+                    <IconPresent aria-hidden /> Hammasi keldi
+                  </button>
+                )}
+              </span>
+              <span>Uy vazifasi</span>
+            </div>
+            <ul className="roster">
+              {rows.map((row) => {
+                const busy = isSaving(row.student.id);
+                const att = row.existing?.attendance ?? null;
+                const hw = row.existing?.homework ?? null;
+                return (
+                  <li className="student" key={row.student.id}>
+                    <div className="student__top">
+                      <Link href={`/students/${row.student.id}`} className="student__who">
+                        <Avatar name={row.student.name} />
+                        <span style={{ minWidth: 0 }}>
+                          <span className="student__name" style={{ display: "block" }}>
+                            {row.student.name}
+                            {busy && <span className="student__spin" role="status" aria-label="Saqlanmoqda" style={{ display: "inline-block" }} />}
+                          </span>
+                          {row.planned && <span className="student__sub">Mavzu: {row.planned.title}</span>}
                         </span>
-                      )}
-                      <span className="coins" title="Coins this week">
-                        <IconCoin />
-                        {row.weekCoins}
+                      </Link>
+                      <span className="student__coins" style={{ display: "flex", gap: 6 }}>
+                        {row.dayCoins > 0 && (
+                          <span className="coins coins--delta" title="Shu dars uchun">
+                            +{row.dayCoins}
+                          </span>
+                        )}
+                        <span className="coins" title="Shu haftadagi tangalar">
+                          <IconCoin aria-hidden />
+                          {row.weekCoins}
+                        </span>
                       </span>
-                    </span>
-                  </div>
-
-                  {groupMode ? null : editing === row.student.id ? (
-                    <form className="topic-edit form-row" onSubmit={(e) => void saveTopic(e, row)}>
-                      <input
-                        className="input"
-                        value={draft}
-                        autoFocus
-                        aria-label={`Topic for ${row.student.name}`}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onKeyDown={(e) => e.key === "Escape" && setEditing(null)}
-                      />
-                      <button className="btn btn--primary btn--sm" type="submit">
-                        Save
-                      </button>
-                    </form>
-                  ) : (
-                    <button className="topic" onClick={() => startEdit(row)} aria-label={`Change topic for ${row.student.name}`}>
-                      <span className="topic__title">
-                        {row.title || "Reja tugadi: mavzu qo'shing yoki shu yerda yozing"}
-                      </span>
-                      <span className={`topic__meta${stuck ? " topic__meta--warn" : ""}`}>
-                        {row.position ? `Topic ${row.position}` : row.title ? "Off-plan" : "No topic planned"}
-                        {row.repeats > 0 && ` · repeated ${row.repeats}×`}
-                      </span>
-                    </button>
-                  )}
-
-                  <div className="results" role="group" aria-label={`Result for ${row.student.name}`}>
-                    {RESULT_ORDER.map((r) => (
-                      <button
-                        key={r}
-                        className={`res res--${r}`}
-                        aria-pressed={row.existing?.result === r}
+                    </div>
+                    <div className="student__marks">
+                      <AttendanceMarks name={row.student.name} value={att} disabled={busy} onChange={(v) => setAttendance(row, v)} />
+                      <HomeworkMarks
+                        name={row.student.name}
+                        value={hw}
+                        muted={att === "absent" && !hw}
                         disabled={busy}
-                        onClick={() => void onMark(row, r)}
-                      >
-                        <ResultIcon result={r} />
-                        <span className="res__label">{RESULT_META[r].label}</span>
-                        {COINS[r] > 0 && <span className="res__pts">+{COINS[r]}</span>}
-                      </button>
-                    ))}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                        onChange={(v) => setHomework(row, v)}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </div>
     </>
-  );
-}
-
-function PageHead({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="page-head">
-      <div>
-        <h1 className="page-title">{title}</h1>
-        {sub && <p className="page-sub">{sub}</p>}
-      </div>
-    </div>
   );
 }

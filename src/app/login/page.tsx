@@ -26,7 +26,7 @@ export default function LoginPage() {
       setBusy(false);
       setError(
         err.message === "Invalid login credentials"
-          ? "Email yoki parol noto'g'ri. Check your email and password."
+          ? "Email yoki parol noto'g'ri."
           : err.message,
       );
       return;
@@ -40,7 +40,7 @@ export default function LoginPage() {
       <form className="login stack" onSubmit={onSubmit}>
         <div>
           <h1 className="login__brand">Jurnal</h1>
-          <p className="login__lead">Darslar, mavzular va tangalar. Faqat o&apos;qituvchi uchun.</p>
+          <p className="login__lead">Davomat, uy vazifasi va tangalar. Faqat o&apos;qituvchi uchun.</p>
         </div>
 
         <label className="field">
@@ -57,7 +57,7 @@ export default function LoginPage() {
         </label>
 
         <label className="field">
-          <span className="field__label">Password</span>
+          <span className="field__label">Parol</span>
           <input
             className="input"
             type="password"
@@ -74,8 +74,8 @@ export default function LoginPage() {
           </p>
         )}
 
-        <button className="btn btn--primary" type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+        <button className="btn btn--primary" type="submit" disabled={busy} style={{ height: 40 }}>
+          {busy ? "Kirilmoqda…" : "Kirish"}
         </button>
       </form>
     </main>

@@ -1,10 +1,10 @@
 const TINTS = [
-  ["#e3e9fb", "#1f3a93"],
-  ["#daf2e6", "#14724a"],
-  ["#ffe9c7", "#8a4e00"],
-  ["#e6e1fa", "#5440bf"],
-  ["#fadcd8", "#b0352c"],
-  ["#dcecf5", "#1d5f80"],
+  ["#e8edfd", "#2748c9"],
+  ["#e2f4eb", "#0e7a4d"],
+  ["#fcefd6", "#8a5200"],
+  ["#ece8fb", "#5440bf"],
+  ["#fae5e3", "#b3302b"],
+  ["#e1eef6", "#1d5f80"],
 ] as const;
 
 function initials(name: string): string {
@@ -19,13 +19,13 @@ function hash(name: string): number {
 }
 
 /** Initials on a soft tint; the colour is derived from the name so it stays stable. */
-export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+export function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   const [bg, fg] = TINTS[hash(name) % TINTS.length];
   return (
     <span
       className="avatar"
       aria-hidden
-      style={{ width: size, height: size, background: bg, color: fg, fontSize: size * 0.36 }}
+      style={{ width: size, height: size, background: bg, color: fg, fontSize: size * 0.38 }}
     >
       {initials(name)}
     </span>
