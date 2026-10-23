@@ -1154,7 +1154,7 @@ textarea.input {
 }
 
 .roster--group .results {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
@@ -1179,7 +1179,7 @@ textarea.input {
 
 @media (min-width: 860px) {
   .roster--group .student {
-    grid-template-columns: minmax(0, 1fr) 470px;
+    grid-template-columns: minmax(0, 1fr) 400px;
     align-items: center;
     gap: 18px;
     padding: 8px 0;
