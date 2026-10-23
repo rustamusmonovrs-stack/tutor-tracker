@@ -3,7 +3,7 @@
 -- Requires 20261023_attendance_homework.sql. Safe to re-run.
 begin;
 
--- Snapshot of the table before changing it.
+-- Snapshot of the table before changing it (taken once; a re-run keeps the original snapshot).
 create table if not exists public.lesson_plans_backup_20261023b as table public.lesson_plans;
 alter table public.lesson_plans_backup_20261023b enable row level security;
 revoke all on public.lesson_plans_backup_20261023b from anon, authenticated;
@@ -21,12 +21,15 @@ alter table public.lesson_plans
   add constraint lesson_plans_topic_len    check (topic    is null or char_length(btrim(topic))    between 1 and 300),
   add constraint lesson_plans_has_content  check (homework is not null or topic is not null);
 
+-- Every snapshotted row must still exist with the same homework text (rows added after the snapshot are fine).
 do $$
-declare a bigint; b bigint;
+declare lost bigint;
 begin
-  select count(*) into a from public.lesson_plans;
-  select count(*) into b from public.lesson_plans_backup_20261023b;
-  if a <> b then raise exception 'lesson_plans row count changed: % vs %', a, b; end if;
+  select count(*) into lost
+  from public.lesson_plans_backup_20261023b b
+  left join public.lesson_plans p on p.id = b.id
+  where p.id is null or p.homework is distinct from b.homework;
+  if lost > 0 then raise exception '% lesson_plans rows changed during migration', lost; end if;
 end $$;
 
 commit;

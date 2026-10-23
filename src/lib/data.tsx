@@ -356,11 +356,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const payload: Record<string, unknown> = { group_id: groupId, lesson_date: date, updated_at: new Date().toISOString() };
         if (t !== undefined) payload.topic = t;
         if (h !== undefined) payload.homework = h;
-        const { data, error: err } = await sb
-          .from("lesson_plans")
-          .upsert(payload, { onConflict: "group_id,lesson_date" })
-          .select(PLAN_COLS)
-          .single();
+        // Existing row: partial UPDATE by id. (An upsert would fail the "has content" check when one field is cleared,
+        // because Postgres validates the proposed insert row before resolving the conflict.)
+        let res = prev
+          ? await sb.from("lesson_plans").update(payload).eq("id", prev.id).select(PLAN_COLS).maybeSingle()
+          : null;
+        if (!res || (!res.error && !res.data)) {
+          res = await sb
+            .from("lesson_plans")
+            .upsert(payload, { onConflict: "group_id,lesson_date" })
+            .select(PLAN_COLS)
+            .single();
+        }
+        const { data, error: err } = res;
         endWrite(!(err || !data));
         if (err || !data) return fail(err, "Dars ma'lumoti saqlanmadi");
         const row = { topic: null, homework: null, ...(data as object) } as LessonPlan;
