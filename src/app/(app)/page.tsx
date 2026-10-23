@@ -105,6 +105,9 @@ export default function TodayPage() {
     };
   });
 
+  // Compact one-row-per-student layout when a group task is set, or when nobody here has a personal topic plan.
+  const groupMode = Boolean(task) || roster.every((s) => (topicsByStudent.get(s.id) ?? []).length === 0);
+
   const marked = rows.filter((r) => r.existing).length;
 
   async function onMark(row: RowModel, result: LessonResult) {
@@ -327,7 +330,7 @@ export default function TodayPage() {
             <Link href="/students">Add students</Link>
           </div>
         ) : (
-          <ul className={`roster${task ? " roster--group" : ""}`}>
+          <ul className={`roster${groupMode ? " roster--group" : ""}`}>
             {rows.map((row) => {
               const busy = isSaving(row.student.id);
               const stuck = row.repeats >= STUCK_AFTER;
@@ -351,7 +354,7 @@ export default function TodayPage() {
                     </span>
                   </div>
 
-                  {task ? null : editing === row.student.id ? (
+                  {groupMode ? null : editing === row.student.id ? (
                     <form className="topic-edit form-row" onSubmit={(e) => void saveTopic(e, row)}>
                       <input
                         className="input"
