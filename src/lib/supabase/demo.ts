@@ -6,9 +6,9 @@
 import { addDays, todayISO, weekStart } from "../dates";
 
 type Row = Record<string, unknown>;
-type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans", Row[]>;
+type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores", Row[]>;
 
-const STORAGE_KEY = "jurnal-demo-db-v1";
+const STORAGE_KEY = "jurnal-demo-db-v2";
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -80,7 +80,7 @@ function seed(): Tables {
         });
     });
   }
-  return { groups, students, topics: [], lessons, lesson_plans: plans };
+  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [] };
 }
 
 function load(): Tables {
@@ -212,6 +212,13 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       const gone = rows.filter((r) => this.matches(r));
       t[this.table] = rows.filter((r) => !gone.includes(r));
       const ids = new Set(gone.map((g) => g.id));
+      if (this.table === "mocks") {
+        const secs = new Set(t.mock_sections.filter((x) => ids.has(x.mock_id)).map((x) => x.id));
+        const res = new Set(t.mock_student_results.filter((x) => ids.has(x.mock_id)).map((x) => x.id));
+        t.mock_sections = t.mock_sections.filter((x) => !ids.has(x.mock_id));
+        t.mock_student_results = t.mock_student_results.filter((x) => !ids.has(x.mock_id));
+        t.mock_section_scores = t.mock_section_scores.filter((x) => !secs.has(x.section_id) && !res.has(x.result_id));
+      }
       if (this.table === "students") {
         t.topics = t.topics.filter((x) => !ids.has(x.student_id));
         t.lessons = t.lessons.filter((x) => !ids.has(x.student_id));
