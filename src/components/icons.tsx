@@ -30,6 +30,8 @@ export {
   CalendarDays as IconCalendar,
   BookOpen as IconBook,
   TriangleAlert as IconAlert,
+  ClipboardCheck as IconMock,
+  Lock as IconLock,
 } from "lucide-react";
 
 /** Coin glyph (kept custom: lucide has no flat coin with a mark). */
