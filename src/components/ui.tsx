@@ -175,3 +175,56 @@ export function Meter({ value, max, tone }: { value: number; max: number; tone?:
     </span>
   );
 }
+
+/** Native <dialog> for forms: same look as ConfirmDialog, but the body is arbitrary content and submit can be disabled. */
+export function FormDialog({
+  open,
+  title,
+  children,
+  submitLabel,
+  canSubmit = true,
+  busy,
+  onSubmit,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  submitLabel: string;
+  canSubmit?: boolean;
+  busy?: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+
+  return (
+    <dialog ref={ref} className="dialog dialog--wide" onCancel={(e) => { e.preventDefault(); onCancel(); }} onClick={(e) => e.target === ref.current && onCancel()}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit && !busy) onSubmit();
+        }}
+      >
+        <div className="dialog__body stack" style={{ gap: 12 }}>
+          <h2>{title}</h2>
+          {open && children}
+        </div>
+        <div className="dialog__foot">
+          <button type="button" className="btn" onClick={onCancel}>
+            Bekor qilish
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={!canSubmit || busy}>
+            {busy ? "Saqlanmoqda…" : submitLabel}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}

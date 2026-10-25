@@ -52,3 +52,8 @@ export function formatLong(iso: string): string {
   const d = parse(iso);
   return `${WEEKDAYS_LONG[d.getUTCDay()]}, ${formatShort(iso)} ${d.getUTCFullYear()}`;
 }
+
+/** "23 okt 2026" */
+export function formatDate(iso: string): string {
+  return `${formatShort(iso)} ${parse(iso).getUTCFullYear()}`;
+}

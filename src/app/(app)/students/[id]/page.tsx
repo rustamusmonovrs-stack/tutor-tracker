@@ -16,8 +16,10 @@ import {
   IconRestore,
   IconTrash,
 } from "@/components/icons";
+import { LearningProgressCard } from "@/components/LearningProgressCard";
 import { AttendanceMarks, ConfirmDialog, HomeworkMarks, Kpi, SaveChip } from "@/components/ui";
 import { useData } from "@/lib/data";
+import { useStages } from "@/lib/stagesData";
 import { addDays, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic, repeatCount, topicStatuses } from "@/lib/progress";
 import { currentStreak, scoreLessons, summarize } from "@/lib/scoring";
@@ -46,6 +48,7 @@ export default function StudentPage() {
     plans,
   } = useData();
 
+  const { transferStudent } = useStages();
   const student = students.find((s) => s.id === id);
   const topics = useMemo(() => topicsByStudent.get(id) ?? [], [topicsByStudent, id]);
   const lessons = useMemo(() => lessonsByStudent.get(id) ?? [], [lessonsByStudent, id]);
@@ -223,6 +226,8 @@ export default function StudentPage() {
         </div>
       )}
 
+      <LearningProgressCard student={student} />
+
       <h2 className="section-title" style={{ marginTop: 8 }}>
         Darslar tarixi
       </h2>
@@ -292,7 +297,7 @@ export default function StudentPage() {
         </form>
         <label className="field">
           <span className="field__label">Guruh</span>
-          <select className="select" value={student.group_id} onChange={(e) => void updateStudent(student.id, { group_id: e.target.value })}>
+          <select className="select" value={student.group_id} onChange={(e) => void transferStudent(student.id, e.target.value)}>
             {activeGroups.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
@@ -301,7 +306,7 @@ export default function StudentPage() {
             ))}
           </select>
         </label>
-        <p className="hint">Guruhni o&apos;zgartirsangiz, barcha darslar va tangalar o&apos;quvchi bilan birga ko&apos;chadi.</p>
+        <p className="hint">Guruh o&apos;zgarishi tarixga yoziladi (eski guruh saqlanadi). Barcha darslar va tangalar o&apos;quvchi bilan birga ko&apos;chadi.</p>
       </div>
 
       <h2 className="section-title">Shaxsiy mavzular rejasi</h2>

@@ -32,6 +32,10 @@ export {
   TriangleAlert as IconAlert,
   ClipboardCheck as IconMock,
   Lock as IconLock,
+  GraduationCap as IconStages,
+  Printer as IconPrint,
+  Flag as IconFlag,
+  ArrowRightLeft as IconTransfer,
 } from "lucide-react";
 
 /** Coin glyph (kept custom: lucide has no flat coin with a mark). */

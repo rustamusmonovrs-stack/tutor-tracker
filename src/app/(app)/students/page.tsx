@@ -18,6 +18,9 @@ import {
 } from "@/components/icons";
 import { ConfirmDialog } from "@/components/ui";
 import { useData } from "@/lib/data";
+import { todayISO } from "@/lib/dates";
+import { LEVELS, isLevel, sortBooks, type Level } from "@/lib/stages";
+import { useStages } from "@/lib/stagesData";
 import { currentTopic } from "@/lib/progress";
 import { scoreLessons } from "@/lib/scoring";
 import { getSupabase } from "@/lib/supabase/client";
@@ -185,6 +188,11 @@ function GroupBlock({
   const [open, setOpen] = useState(members.length > 0);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const stages = useStages();
+  const books = useMemo(() => sortBooks(stages.books.filter((b) => b.active)), [stages.books]);
+  const [bookId, setBookId] = useState("");
+  const [level, setLevel] = useState<Level | "">("");
+  const [started, setStarted] = useState(todayISO());
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(group.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -204,7 +212,16 @@ function GroupBlock({
     e.preventDefault();
     const value = name.trim();
     if (!value) return;
-    if (await addStudent(value, group.id)) setName("");
+    const created = await addStudent(value, group.id);
+    if (!created) return;
+    setName("");
+    if (bookId && isLevel(level)) {
+      // The student is already saved; if the stage fails the teacher can set it from the profile.
+      await stages.setStage([created.id], bookId, level, started);
+    }
+    setBookId("");
+    setLevel("");
+    setStarted(todayISO());
   }
 
   async function submitRename(e: FormEvent) {
@@ -310,7 +327,7 @@ function GroupBlock({
           {!group.archived_at && (
             <div className="group-add">
               {adding ? (
-                <form className="form-row" onSubmit={submitStudent}>
+                <form className="add-student" onSubmit={submitStudent}>
                   <input
                     className="input"
                     placeholder={`${group.name}: yangi o'quvchi ismi`}
@@ -321,12 +338,44 @@ function GroupBlock({
                     onChange={(e) => setName(e.target.value)}
                     onKeyDown={(e) => e.key === "Escape" && setAdding(false)}
                   />
-                  <button className="btn btn--primary" type="submit" disabled={!name.trim()}>
-                    Qo&apos;shish
-                  </button>
-                  <button className="btn btn--ghost" type="button" onClick={() => setAdding(false)}>
-                    Yopish
-                  </button>
+                  <div className="add-student__stage">
+                    <select
+                      className="select"
+                      aria-label="Qaysi kitobdan boshlaydi?"
+                      value={bookId}
+                      disabled={books.length === 0}
+                      onChange={(e) => {
+                        setBookId(e.target.value);
+                        const suggested = stages.bookById.get(e.target.value)?.level;
+                        if (suggested) setLevel(suggested);
+                      }}
+                    >
+                      <option value="">{books.length ? "Kitob (ixtiyoriy)" : "O'quv dasturi to'ldirilmagan"}</option>
+                      {books.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.position}. {b.title}
+                        </option>
+                      ))}
+                    </select>
+                    <select className="select" aria-label="Hozirgi level" value={level} disabled={!bookId} onChange={(e) => setLevel(e.target.value as Level)}>
+                      <option value="">Level</option>
+                      {LEVELS.map((l) => (
+                        <option key={l} value={l}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                    <input className="input" type="date" aria-label="Kitobni boshlash sanasi" value={started} max={todayISO()} disabled={!bookId} onChange={(e) => setStarted(e.target.value)} />
+                  </div>
+                  {bookId && !level && <p className="hint">Kitob tanlansa, levelni ham tanlang.</p>}
+                  <div className="form-row">
+                    <button className="btn btn--primary" type="submit" disabled={!name.trim() || Boolean(bookId && !level)}>
+                      Qo&apos;shish
+                    </button>
+                    <button className="btn btn--ghost" type="button" onClick={() => setAdding(false)}>
+                      Yopish
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <button className="btn btn--ghost btn--sm" onClick={() => setAdding(true)}>
