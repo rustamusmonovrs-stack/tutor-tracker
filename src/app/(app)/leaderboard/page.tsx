@@ -24,13 +24,6 @@ function initialsOf(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
-/** Visual order: 2nd on the left, 1st in the middle (and larger), 3rd on the right. Works for 1 or 2 people too. */
-function podiumOrder(p: Standing[]): Standing[] {
-  if (p.length >= 3) return [p[1], p[0], p[2]];
-  if (p.length === 2) return [p[1], p[0]];
-  return p;
-}
-
 export default function LeaderboardPage() {
   const { activeGroups, activeStudents, lessons, lessonsByStudent, topicsByStudent } = useData();
   const [period, setPeriod] = useState<Period>("week");
@@ -53,10 +46,15 @@ export default function LeaderboardPage() {
     return buildStandings(pool, lessons, range);
   }, [activeStudents, lessons, range, scopeGroup]);
 
-  // Top 3 = first three people with coins; they keep their true (tied) rank. Everyone else goes to the list.
-  const { podium, rest } = useMemo(() => {
-    const winners = standings.filter((s) => s.coins > 0).slice(0, 3);
-    return { podium: winners, rest: standings.filter((s) => !winners.includes(s)) };
+  // Podium = everyone with a real rank 1-3 (ties share a rank and are never split between podium and list).
+  const { top, rest, tiers } = useMemo(() => {
+    const winners = standings.filter((s) => s.coins > 0 && s.rank <= 3);
+    const ranks = [...new Set(winners.map((s) => s.rank))];
+    return {
+      top: winners,
+      rest: standings.filter((s) => !winners.includes(s)),
+      tiers: ranks.map((rank) => ({ rank, members: winners.filter((s) => s.rank === rank) })),
+    };
   }, [standings]);
 
   const groupStandings = useMemo(
@@ -118,7 +116,7 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <>
+    <div className="lb">
       <div className="page-head">
         <div>
           <h1 className="page-title">Reyting</h1>
@@ -188,50 +186,76 @@ export default function LeaderboardPage() {
           </div>
         ) : (
           <>
-            {podium.length > 0 && (
-              <ol className={`podium podium--${podium.length}`} aria-label="Top 3">
-                {podiumOrder(podium).map((s) => (
-                  <li key={s.student.id} className={`podium__slot podium__slot--${Math.min(s.rank, 3)}${s === podium[0] ? " podium__slot--first" : ""}`}>
-                    <Link href={`/students/${s.student.id}`} className="podium__card">
-                      <span className="podium__rank" aria-label={`${s.rank}-o'rin`}>{s.rank}</span>
-                      <span className="podium__initials" aria-hidden>{initialsOf(s.student.name)}</span>
-                      <span className="podium__name">{s.student.name}</span>
-                      <span className="podium__group">{groupName.get(s.student.group_id) ?? ""}</span>
-                      <span className="podium__score">
-                        <IconCoin width={16} height={16} aria-hidden />
+            {top.length > 0 && (top.length <= 3 ? (
+              <ol className={`lb-podium lb-podium--${top.length}${top.length > 1 && top[0].rank < top[1].rank ? " lb-podium--lead" : ""}`} aria-label="Top 3">
+                {top.map((s) => (
+                  <li key={s.student.id} className={`lb-slot lb-slot--${s.rank}`}>
+                    <Link href={`/students/${s.student.id}`} className="lb-card">
+                      <span className="lb-card__rank">{s.rank}-o&apos;rin</span>
+                      <span className="lb-initials" aria-hidden>{initialsOf(s.student.name)}</span>
+                      <span className="lb-card__name">{s.student.name}</span>
+                      <span className="lb-card__group">{groupName.get(s.student.group_id) ?? ""}</span>
+                      <span className="lb-card__score">
+                        <IconCoin width={15} height={15} aria-hidden />
                         {s.coins}
                       </span>
                     </Link>
                   </li>
                 ))}
               </ol>
-            )}
-            {rest.length > 0 && (
-              <ol className="list" start={rest[0].rank}>
-                {rest.map((s) => (
-                  <li key={s.student.id} className="rank">
-                    <span className="rank__pos">{s.rank}</span>
-                    <Link href={`/students/${s.student.id}`} className="row__who" style={{ color: "inherit", textDecoration: "none" }}>
-                      <Avatar name={s.student.name} />
-                      <span style={{ minWidth: 0 }}>
-                        <span className="row__main">{s.student.name}</span>
-                        <span className="row__sub">
-                          {scopeGroup ? "" : `${groupName.get(s.student.group_id) ?? ""} · `}
-                          {s.full} to&apos;liq · {s.attended} dars
-                        </span>
+            ) : (
+              <div className="lb-tiers" aria-label="Top 3">
+                {tiers.map((t) => (
+                  <section key={t.rank} className={`lb-tier lb-slot--${t.rank}`}>
+                    <header className="lb-tier__head">
+                      <span className="lb-card__rank">{t.rank}-o&apos;rin</span>
+                      <span className="lb-tier__meta">{t.members.length} ta o&apos;quvchi</span>
+                      <span className="lb-card__score">
+                        <IconCoin width={15} height={15} aria-hidden />
+                        {t.members[0].coins}
                       </span>
-                    </Link>
-                    <span className="rank__meta">{s.full} to&apos;liq</span>
-                    <span className="rank__meta">
-                      {s.attended}/{s.attended + s.absent} davomat
-                    </span>
-                    <span className="rank__score">
-                      {s.coins}
-                      <small>tanga</small>
-                    </span>
-                  </li>
+                    </header>
+                    <ul className={`lb-tier__list${t.members.length === 1 ? " lb-tier__list--solo" : ""}`}>
+                      {t.members.map((s) => (
+                        <li key={s.student.id}>
+                          <Link href={`/students/${s.student.id}`} className="lb-chip">
+                            <span className="lb-initials lb-initials--sm" aria-hidden>{initialsOf(s.student.name)}</span>
+                            <span className="lb-chip__text">
+                              <span className="lb-chip__name">{s.student.name}</span>
+                              <span className="lb-chip__sub">{groupName.get(s.student.group_id) ?? ""}</span>
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
-              </ol>
+              </div>
+            ))}
+            {rest.length > 0 && (
+              <>
+                {top.length > 0 && <h2 className="lb-list-title">Barcha o&apos;quvchilar reytingi</h2>}
+                <ol className="lb-list">
+                  {rest.map((s) => (
+                    <li key={s.student.id} className="lb-row">
+                      <span className="lb-row__pos">{s.rank}</span>
+                      <Link href={`/students/${s.student.id}`} className="lb-row__who">
+                        <span className="lb-initials lb-initials--sm" aria-hidden>{initialsOf(s.student.name)}</span>
+                        <span className="lb-row__text">
+                          <span className="lb-row__name">{s.student.name}</span>
+                          <span className="lb-row__sub">
+                            {scopeGroup ? "" : (groupName.get(s.student.group_id) ?? "")}
+                            <span className="lb-row__inline">{scopeGroup ? "" : " · "}{s.full} to&apos;liq · {s.attended}/{s.attended + s.absent} davomat</span>
+                          </span>
+                        </span>
+                      </Link>
+                      <span className="lb-row__stat">{s.full}<small>to&apos;liq</small></span>
+                      <span className="lb-row__stat">{s.attended}/{s.attended + s.absent}<small>davomat</small></span>
+                      <span className="lb-row__coins">{s.coins}<small>tanga</small></span>
+                    </li>
+                  ))}
+                </ol>
+              </>
             )}
           </>
         )}
@@ -259,6 +283,6 @@ export default function LeaderboardPage() {
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
