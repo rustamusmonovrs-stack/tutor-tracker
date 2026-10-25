@@ -6,7 +6,7 @@
 import { addDays, todayISO, weekStart } from "../dates";
 
 type Row = Record<string, unknown>;
-type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores", Row[]>;
+type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores" | "curriculum_books" | "student_learning_progress" | "student_book_history" | "student_group_transfer_history", Row[]>;
 
 const STORAGE_KEY = "jurnal-demo-db-v2";
 
@@ -80,13 +80,19 @@ function seed(): Tables {
         });
     });
   }
-  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [] };
+  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [], curriculum_books: [], student_learning_progress: [], student_book_history: [], student_group_transfer_history: [] };
 }
 
 function load(): Tables {
   try {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Tables;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<Tables>;
+      const empty = seed();
+      // sessions saved before a table existed get it empty (never reseed existing data)
+      for (const k of Object.keys(empty) as (keyof Tables)[]) if (!parsed[k]) parsed[k] = [];
+      return parsed as Tables;
+    }
   } catch {
     /* ignore */
   }
@@ -203,7 +209,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       out = rows.filter((r) => this.matches(r)).slice(this.from, this.to === Infinity ? undefined : this.to + 1);
     } else if (this.op === "insert") {
       const items = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
-      out = items.map((i) => ({ id: uuid(), archived_at: null, created_at: new Date().toISOString(), ...i }));
+      out = items.map((i) => ({ id: uuid(), archived_at: null, created_at: new Date().toISOString(), ...(this.table === "curriculum_books" ? { active: true, level: null, avg_weeks: null, planned_lessons: null } : {}), ...i }));
       rows.push(...out);
     } else if (this.op === "update") {
       out = rows.filter((r) => this.matches(r));
@@ -222,6 +228,9 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       if (this.table === "students") {
         t.topics = t.topics.filter((x) => !ids.has(x.student_id));
         t.lessons = t.lessons.filter((x) => !ids.has(x.student_id));
+        t.student_learning_progress = t.student_learning_progress.filter((x) => !ids.has(x.student_id));
+        t.student_book_history = t.student_book_history.filter((x) => !ids.has(x.student_id));
+        t.student_group_transfer_history = t.student_group_transfer_history.filter((x) => !ids.has(x.student_id));
       }
     } else if (this.op === "upsert") {
       const items = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
@@ -246,8 +255,81 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   }
 }
 
+type Result = { data: unknown; error: { message: string } | null };
+const bad = (message: string): Result => ({ data: null, error: { message } });
+const iso = () => new Date().toISOString();
+
+/** Mirrors the SQL functions in supabase/migrations/20261026_stages.sql (same guards, same outcomes). */
+function rpc(name: string, a: Record<string, unknown>): Result {
+  const t = tables();
+  const win = window as unknown as { __demoFail?: boolean };
+  if (win.__demoFail) return bad("Demo: tarmoq xatosi");
+  const upsertProgress = (sid: string, level: unknown) => {
+    const hit = t.student_learning_progress.find((p) => p.student_id === sid);
+    if (hit) Object.assign(hit, { level });
+    else t.student_learning_progress.push({ id: uuid(), student_id: sid, level, lessons_per_week: null, teacher_note: null, next_goal: null });
+  };
+  if (name === "set_students_stage") {
+    const { p_students, p_book, p_level, p_started_on, p_dates } = a as { p_students: string[]; p_book: string; p_level: string; p_started_on: string; p_dates: Record<string, string> };
+    if (!p_book || !p_level || !p_started_on) return bad("book, level and start date are required");
+    if (!t.curriculum_books.some((b) => b.id === p_book)) return bad("book not found");
+    for (const sid of p_students) {
+      const st = t.students.find((s) => s.id === sid);
+      if (!st) return bad(`student ${sid} not found`);
+      const d = p_dates?.[sid] ?? p_started_on;
+      const mine = t.student_book_history.filter((h) => h.student_id === sid);
+      const active = mine.find((h) => h.finished_on == null);
+      if (!active) {
+        if (mine.length) return bad(`student ${sid} already has a finished program; cannot place again`);
+        t.student_book_history.push({ id: uuid(), student_id: sid, book_id: p_book, group_id: st.group_id, level: p_level, started_on: d, finished_on: null, outcome: null, created_at: iso() });
+      } else Object.assign(active, { book_id: p_book, level: p_level, started_on: d });
+      upsertProgress(sid, p_level);
+    }
+    persist();
+    return { data: p_students.length, error: null };
+  }
+  if (name === "finish_student_book") {
+    const { p_history, p_finished_on, p_outcome, p_next_book, p_next_level, p_next_started_on } = a as Record<string, string | null>;
+    const h = t.student_book_history.find((x) => x.id === p_history);
+    if (!h) return bad("history record not found");
+    if (h.finished_on != null) return bad("book already finished");
+    if (!["next", "repeat", "program_done"].includes(p_outcome ?? "")) return bad("invalid outcome");
+    if (!p_finished_on || p_finished_on < (h.started_on as string)) return bad("finish date is before start date");
+    if (p_finished_on > addDays(todayISO(), 1)) return bad("finish date is in the future");
+    const nb = p_outcome === "repeat" ? (h.book_id as string) : p_next_book;
+    if (p_outcome !== "program_done") {
+      if (!nb || !t.curriculum_books.some((b) => b.id === nb)) return bad("next book is required");
+      if (!p_next_started_on || p_next_started_on < p_finished_on) return bad("next book start date is invalid");
+    }
+    Object.assign(h, { finished_on: p_finished_on, outcome: p_outcome });
+    if (p_outcome === "program_done") {
+      persist();
+      return { data: null, error: null };
+    }
+    const st = t.students.find((s) => s.id === h.student_id);
+    const row = { id: uuid(), student_id: h.student_id, book_id: nb, group_id: st?.group_id ?? null, level: p_next_level ?? h.level, started_on: p_next_started_on, finished_on: null, outcome: null, created_at: iso() };
+    t.student_book_history.push(row);
+    if (p_next_level) upsertProgress(h.student_id as string, p_next_level);
+    persist();
+    return { data: row.id, error: null };
+  }
+  if (name === "transfer_student") {
+    const { p_student, p_group, p_note } = a as { p_student: string; p_group: string; p_note: string | null };
+    const st = t.students.find((s) => s.id === p_student);
+    if (!st) return bad("student not found");
+    if (st.group_id === p_group) return bad("student is already in this group");
+    if (!t.groups.some((g) => g.id === p_group && g.archived_at == null)) return bad("target group not found or archived");
+    t.student_group_transfer_history.push({ id: uuid(), student_id: p_student, from_group_id: st.group_id, to_group_id: p_group, transferred_at: iso(), note: p_note?.trim() || null });
+    st.group_id = p_group;
+    persist();
+    return { data: null, error: null };
+  }
+  return bad(`unknown function ${name}`);
+}
+
 export const demoClient = {
   from: (table: string) => new Query(table as keyof Tables),
+  rpc: (name: string, args: Record<string, unknown>) => new Promise<Result>((resolve) => setTimeout(() => resolve(rpc(name, args)), 60)),
   auth: {
     signOut: async () => ({ error: null }),
     signInWithPassword: async () => ({ data: {}, error: null }),

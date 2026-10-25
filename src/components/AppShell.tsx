@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { IconMock, IconPeople, IconRank, IconStats, IconToday } from "@/components/icons";
+import { IconMock, IconPeople, IconRank, IconStages, IconStats, IconToday } from "@/components/icons";
 import { useData } from "@/lib/data";
 
 const LINKS = [
@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/mock", label: "Mock", icon: IconMock },
   { href: "/leaderboard", label: "Reyting", icon: IconRank },
   { href: "/students", label: "O'quvchilar", icon: IconPeople },
+  { href: "/stages", label: "Bosqichlar", icon: IconStages },
   { href: "/stats", label: "Statistika", icon: IconStats },
 ] as const;
 
