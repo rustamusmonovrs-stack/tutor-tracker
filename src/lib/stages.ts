@@ -11,18 +11,47 @@ export const LEVELS = [
 ] as const;
 export type Level = (typeof LEVELS)[number];
 
-export const PROGRAM_SIZE = 9;
+export type ProgramKey = "general" | "kids" | "president";
+export type Track = "primary" | "additional";
+
+export interface Program {
+  id: string;
+  key: ProgramKey;
+  name: string;
+  position: number;
+}
+
+/** Fixed set created for every owner (names are display defaults; books are always admin-managed). */
+export const DEFAULT_PROGRAMS: { key: ProgramKey; name: string; position: number }[] = [
+  { key: "general", name: "General English", position: 1 },
+  { key: "kids", name: "Kids English", position: 2 },
+  { key: "president", name: "Prezident maktabiga tayyorgarlik", position: 3 },
+];
+
+export interface StudentProgram {
+  id: string;
+  student_id: string;
+  program_id: string;
+  track: Track;
+}
 
 export type Outcome = "next" | "repeat" | "program_done";
 
 export interface Book {
   id: string;
+  program_id: string;
   position: number;
   title: string;
   level: Level | null;
   avg_weeks: number | null;
   planned_lessons: number | null;
   active: boolean;
+  archived_at: string | null;
+}
+
+/** Books that can be chosen for new placements. */
+export function isSelectable(b: Book): boolean {
+  return b.active && !b.archived_at;
 }
 
 export interface Progress {
@@ -38,6 +67,7 @@ export interface BookStint {
   id: string;
   student_id: string;
   book_id: string;
+  program_id: string;
   group_id: string | null;
   level: Level | null;
   started_on: string;
@@ -216,7 +246,7 @@ export function forecastProgram(
   if (!currentBookId || !current.ok || current.remainingWeeks === undefined) {
     return { ok: false, reason: NO_DATA };
   }
-  const ordered = sortBooks(books.filter((b) => b.active));
+  const ordered = sortBooks(books.filter(isSelectable));
   const idx = ordered.findIndex((b) => b.id === currentBookId);
   if (idx < 0) return { ok: false, reason: NO_DATA };
   const later = ordered.slice(idx + 1);
@@ -258,7 +288,7 @@ export function buildOutlook(i: OutlookInput): string {
     return "O'quvchining bosqichi hali belgilanmagan, shu sababli prognoz hisoblanmadi.";
   }
   if (i.stage === "done") {
-    return "O'quvchi 9 kitoblik dasturni yakunlagan. Keyingi o'quv maqsadi o'qituvchi bilan birgalikda belgilanadi.";
+    return "O'quvchi o'quv dasturini yakunlagan. Keyingi o'quv maqsadi o'qituvchi bilan birgalikda belgilanadi.";
   }
   if (!i.book || !i.book.ok) {
     return `${NO_DATA}. O'qituvchi kitob muddati va haftalik darslar sonini kiritgach, bu yerda taxminiy muddat paydo bo'ladi.`;
@@ -346,4 +376,71 @@ export function summarizeStudent(i: {
     program,
     ready: forecast ? isReadyForNext(forecast) : false,
   };
+}
+
+// ---------------------------------------------------------------- Saturday plans (configurable, never hard-coded)
+
+export type SaturdayMode = "lesson" | "mock" | "mini_test" | "none";
+export type SaturdayScope = "default" | "program" | "group" | "student";
+
+export const SATURDAY_MODES: { id: SaturdayMode; label: string }[] = [
+  { id: "lesson", label: "Oddiy dars" },
+  { id: "mock", label: "Mock" },
+  { id: "mini_test", label: "Mini-test" },
+  { id: "none", label: "Mashg‘ulot yo‘q" },
+];
+
+export interface SaturdayPlan {
+  id: string;
+  scope: SaturdayScope;
+  program_id: string | null;
+  group_id: string | null;
+  student_id: string | null;
+  /** null = every Saturday; a date = that Saturday only */
+  on_date: string | null;
+  mode: SaturdayMode;
+  note: string | null;
+}
+
+export function isSaturday(iso: string): boolean {
+  return new Date(`${iso}T00:00:00Z`).getUTCDay() === 6;
+}
+
+/**
+ * Effective Saturday mode for one student on one date, or null when the admin configured nothing
+ * (null = behave exactly as before). Order: a plan for that exact date beats a standing plan;
+ * inside each: student > group > program > default.
+ */
+export function saturdayModeFor(
+  plans: SaturdayPlan[],
+  ctx: { studentId: string; groupId: string | null; programId: string | null; date: string },
+): SaturdayMode | null {
+  if (!isSaturday(ctx.date)) return null;
+  const pick = (onDate: string | null): SaturdayMode | null => {
+    const at = plans.filter((p) => p.on_date === onDate);
+    return (
+      at.find((p) => p.scope === "student" && p.student_id === ctx.studentId)?.mode ??
+      (ctx.groupId ? at.find((p) => p.scope === "group" && p.group_id === ctx.groupId)?.mode : undefined) ??
+      (ctx.programId ? at.find((p) => p.scope === "program" && p.program_id === ctx.programId)?.mode : undefined) ??
+      at.find((p) => p.scope === "default")?.mode ??
+      null
+    );
+  };
+  return pick(ctx.date) ?? pick(null);
+}
+
+/**
+ * Lessons that may count toward a book's planned lessons. A Saturday that the admin set to mock / mini-test /
+ * no class never counts, so a mock that replaced a lesson cannot inflate book progress.
+ */
+export function lessonsForProgress<L extends { lesson_date: string }>(
+  lessons: L[],
+  plans: SaturdayPlan[],
+  ctx: { studentId: string; groupId: string | null; programId: string | null },
+): L[] {
+  if (!plans.length) return lessons;
+  return lessons.filter((l) => {
+    const m = saturdayModeFor(plans, { ...ctx, date: l.lesson_date });
+    return m === null || m === "lesson";
+  });
 }

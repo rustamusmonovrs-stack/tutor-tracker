@@ -33,9 +33,12 @@ export async function proxy(request: NextRequest) {
   // Must run before any response is returned so refreshed tokens can be written.
   const { data } = await supabase.auth.getClaims();
   const signedIn = Boolean(data?.claims);
-  const isLogin = request.nextUrl.pathname.startsWith("/login");
+  const path = request.nextUrl.pathname;
+  const isLogin = path.startsWith("/login");
+  // Public, read-only parents page (certificates). Everything else still requires a session.
+  const isPublic = path === "/natijalar" || path.startsWith("/natijalar/");
 
-  if (!signedIn && !isLogin) {
+  if (!signedIn && !isLogin && !isPublic) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.search = "";

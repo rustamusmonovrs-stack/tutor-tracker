@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { MockCreateDialog } from "@/components/MockCreateDialog";
+import { SaturdayPlans } from "@/components/SaturdayPlans";
 import { IconCalendar, IconChevronRight, IconPlus } from "@/components/icons";
 import { Meter } from "@/components/ui";
 import { useData } from "@/lib/data";
@@ -53,6 +54,8 @@ export default function MockListPage() {
           </button>
         </div>
       </div>
+
+      <SaturdayPlans />
 
       <div className="toolbar mock-filters">
         <select className="select" aria-label="Guruh" value={groupId} onChange={(e) => setGroupId(e.target.value)}>

@@ -7,8 +7,8 @@ import { Meter } from "@/components/ui";
 import { IconFlag, IconPrint, IconStages, IconTransfer } from "@/components/icons";
 import { useData } from "@/lib/data";
 import { formatDate, todayISO } from "@/lib/dates";
-import { durationText, NO_DATA, sortBooks, summarizeStudent, weeksText, type Book } from "@/lib/stages";
-import { useStages } from "@/lib/stagesData";
+import { durationText, isSelectable, lessonsForProgress, NO_DATA, sortBooks, summarizeStudent, weeksText, type Book, type Progress } from "@/lib/stages";
+import { useStages, type TrackScope } from "@/lib/stagesData";
 import type { Student } from "@/lib/types";
 
 /** 9 segments: green = finished, blue = reading now, neutral = not started. Never inferred from elapsed time. */
@@ -16,15 +16,15 @@ export function BookSegments({ books, completed, activeId, compact }: { books: B
   const ordered = sortBooks(books);
   if (!ordered.length) return null;
   return (
-    <ol className={`segbar${compact ? " segbar--compact" : ""}`} aria-label="9 kitoblik dastur">
-      {ordered.map((b) => {
+    <ol className={`segbar${compact ? " segbar--compact" : ""}`} aria-label={`${ordered.length} kitoblik dastur`}>
+      {ordered.map((b, i) => {
         const state = completed.includes(b.id) ? "done" : b.id === activeId ? "now" : "todo";
         const label = state === "done" ? "tugatilgan" : state === "now" ? "hozir o'qilmoqda" : "boshlanmagan";
         return (
-          <li key={b.id} className={`segbar__seg segbar__seg--${state}`} title={`${b.position}. ${b.title} — ${label}`}>
+          <li key={b.id} className={`segbar__seg segbar__seg--${state}`} title={`${i + 1}. ${b.title} — ${label}`}>
             <span className="segbar__fill" />
-            {!compact && <span className="segbar__n">{b.position}</span>}
-            <span className="sr-only">{`${b.position}. ${b.title}: ${label}`}</span>
+            {!compact && <span className="segbar__n">{i + 1}</span>}
+            <span className="sr-only">{`${i + 1}. ${b.title}: ${label}`}</span>
           </li>
         );
       })}
@@ -33,20 +33,14 @@ export function BookSegments({ books, completed, activeId, compact }: { books: B
 }
 
 export function LearningProgressCard({ student }: { student: Student }) {
-  const { groups, lessonsByStudent } = useData();
+  const { groups } = useData();
   const stages = useStages();
-  const { status, books, bookById, progressByStudent, stintsByStudent, transfersByStudent, saveSettings } = stages;
-  const [setting, setSetting] = useState(false);
-  const [finishing, setFinishing] = useState(false);
-  const today = todayISO();
-
-  const stints = stintsByStudent.get(student.id) ?? [];
+  const { status, programs, progressByStudent, transfersByStudent, saveSettings, scopesOf } = stages;
+  const [adding, setAdding] = useState(false);
   const progress = progressByStudent.get(student.id) ?? null;
-  const lessons = lessonsByStudent.get(student.id) ?? [];
-  const sum = useMemo(
-    () => summarizeStudent({ stints, progress, books, lessons, today }),
-    [stints, progress, books, lessons, today],
-  );
+  const scopes = scopesOf(student.id);
+  const primary = scopes.find((x) => x.track === "primary") ?? null;
+  const extra = scopes.find((x) => x.track === "additional") ?? null;
   const groupName = (id: string | null) => groups.find((g) => g.id === id)?.name ?? "—";
 
   const [lpw, setLpw] = useState<string | null>(null);
@@ -59,17 +53,14 @@ export function LearningProgressCard({ student }: { student: Student }) {
       <section className="card card--pad" style={{ marginBottom: 16 }}>
         <h2 className="section-title" style={{ margin: 0 }}>Ta&apos;lim rivojlanishi</h2>
         <p className="hint" style={{ marginTop: 6 }}>
-          Bosqichlar moduli hali bazada yoqilmagan (migratsiya qo&apos;llanmagan) yoki yuklanmadi.
+          Bosqichlar moduli yuklanmadi (migratsiya qo&apos;llanmagan bo&apos;lishi mumkin).
         </p>
       </section>
     );
   }
 
-  const { view, book } = sum;
-  const ordered = sortBooks(books.filter((b) => b.active));
-  const nextBook = book ? (ordered.find((b) => b.position > book.position) ?? null) : null;
-  const activeStint = view.active;
   const transfers = transfersByStudent.get(student.id) ?? [];
+  const addable = programs.filter((p) => !scopes.some((x) => x.program.id === p.id)).map((p) => p.id);
 
   async function saveSet(e: FormEvent) {
     e.preventDefault();
@@ -91,14 +82,14 @@ export function LearningProgressCard({ student }: { student: Student }) {
           Ta&apos;lim rivojlanishi
         </h2>
         <div className="lp__tools">
-          {view.state !== "done" && (
-            <button className="btn btn--sm" onClick={() => setSetting(true)}>
-              <IconStages aria-hidden /> {view.state === "unset" ? "Bosqichni belgilash" : "Tuzatish"}
+          {!primary && addable.length > 0 && (
+            <button className="btn btn--sm btn--primary" onClick={() => setAdding(true)}>
+              <IconStages aria-hidden /> Dasturga biriktirish
             </button>
           )}
-          {view.state === "active" && (
-            <button className="btn btn--sm btn--primary" onClick={() => setFinishing(true)}>
-              <IconFlag aria-hidden /> Kitobni tugatdi
+          {primary && !extra && addable.length > 0 && (
+            <button className="btn btn--sm" onClick={() => setAdding(true)}>
+              <IconStages aria-hidden /> Qo‘shimcha yo‘nalish
             </button>
           )}
           <Link className="btn btn--sm" href={`/students/${student.id}/report`}>
@@ -107,9 +98,125 @@ export function LearningProgressCard({ student }: { student: Student }) {
         </div>
       </div>
 
-      {books.length === 0 ? (
+      {scopes.length === 0 ? (
+        <div className="empty" style={{ padding: "8px 0" }}>
+          <strong>O‘quv dasturi belgilanmagan · Daraja belgilanmagan · Kitob belgilanmagan</strong>
+          <p>“Dasturga biriktirish” orqali o‘quv dasturi, hozirgi kitob, level va boshlagan sanani kiriting.</p>
+        </div>
+      ) : (
+        scopes.map((scope) => (
+          <TrackPanel key={scope.program.id} student={student} scope={scope} progress={progress} showHeading={scopes.length > 1 || scope.program.key !== "general"} />
+        ))
+      )}
+
+      {transfers.length > 0 && (
+        <div>
+          <h3 className="lp__sub"><IconTransfer aria-hidden /> Guruh tarixi</h3>
+          <ul className="lp__hist">
+            {[...transfers].reverse().map((t) => (
+              <li key={t.id}>
+                <span>{groupName(t.from_group_id)} → {groupName(t.to_group_id)}</span>
+                <span className="hint">{formatDate(t.transferred_at.slice(0, 10))}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <details className="own-dates">
+        <summary>Prognoz va hisobot sozlamalari</summary>
+        <form className="stack" style={{ marginTop: 10 }} onSubmit={saveSet}>
+          <label className="field">
+            <span className="field__label">Haftalik darslar soni</span>
+            <select className="select" value={lpw ?? String(progress?.lessons_per_week ?? "")} onChange={(e) => setLpw(e.target.value)}>
+              <option value="">Kiritilmagan</option>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">O&apos;qituvchi xulosasi (ota-onalar hisoboti uchun)</span>
+            <textarea className="input" maxLength={1000} value={note ?? progress?.teacher_note ?? ""} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="field__label">Keyingi o&apos;quv maqsadi</span>
+            <input className="input" maxLength={300} value={goal ?? progress?.next_goal ?? ""} onChange={(e) => setGoal(e.target.value)} />
+          </label>
+          <div>
+            <button className="btn btn--primary" type="submit" disabled={lpw === null && note === null && goal === null}>Saqlash</button>
+          </div>
+        </form>
+      </details>
+
+      <SetStageDialog open={adding} students={[student]} programIds={addable} onClose={() => setAdding(false)} />
+    </section>
+  );
+}
+
+/** One program the student studies in (primary or additional). Histories of different programs never mix. */
+function TrackPanel({ student, scope, progress, showHeading }: { student: Student; scope: TrackScope; progress: Progress | null; showHeading: boolean }) {
+  const { lessonsByStudent } = useData();
+  const { plans, bookById, removeProgram } = useStages();
+  const [setting, setSetting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const today = todayISO();
+  const lessons = lessonsByStudent.get(student.id) ?? [];
+
+  const sum = useMemo(
+    () =>
+      summarizeStudent({
+        stints: scope.stints,
+        // the overall language level belongs to the primary track; an additional track shows its own stint level
+        progress: scope.track === "primary" ? progress : progress ? { ...progress, level: null } : null,
+        books: scope.books,
+        lessons: lessonsForProgress(lessons, plans, { studentId: student.id, groupId: student.group_id, programId: scope.program.id }),
+        today,
+      }),
+    [scope, progress, lessons, plans, student.id, student.group_id, today],
+  );
+
+  const { view, book } = sum;
+  const ordered = sortBooks(scope.books.filter(isSelectable));
+  const nextBook = book ? (ordered.find((b) => b.position > book.position) ?? null) : null;
+  const activeStint = view.active;
+  const total = scope.books.filter((b) => !b.archived_at).length;
+
+  return (
+    <div className="lp__track">
+      {showHeading && (
+        <div className="lp__trackhead">
+          <h3 className="lp__sub" style={{ margin: 0 }}>
+            {scope.program.name} <span className={`chip ${scope.track === "primary" ? "chip--brand" : ""}`}>{scope.track === "primary" ? "Asosiy" : "Qo‘shimcha yo‘nalish"}</span>
+          </h3>
+        </div>
+      )}
+      <div className="lp__tools lp__tools--left">
+        {view.state !== "done" && (
+          <button className="btn btn--sm" onClick={() => setSetting(true)}>
+            <IconStages aria-hidden /> {view.state === "unset" ? "Bosqichni belgilash" : "Tuzatish"}
+          </button>
+        )}
+        {view.state === "active" && (
+          <button className="btn btn--sm btn--primary" onClick={() => setFinishing(true)}>
+            <IconFlag aria-hidden /> Kitobni tugatdi
+          </button>
+        )}
+        {view.state !== "active" && (
+          <button
+            className="btn btn--sm btn--ghost"
+            onClick={() => {
+              if (window.confirm(`${student.name}: “${scope.program.name}” yo‘nalishi olib tashlansinmi? Kitoblar tarixi saqlanadi.`)) void removeProgram(student.id, scope.program.id);
+            }}
+          >
+            Yo‘nalishni olib tashlash
+          </button>
+        )}
+      </div>
+
+      {scope.books.length === 0 ? (
         <p className="hint">
-          O&apos;quv dasturi hali to&apos;ldirilmagan. <Link href="/stages?tab=program">Bosqichlar → O&apos;quv dasturi</Link> bo&apos;limida 9 ta kitobni yarating.
+          Bu dasturda kitob yo&apos;q. <Link href="/stages?tab=program">Bosqichlar → O&apos;quv dasturi</Link> bo&apos;limida kitob qo&apos;shing.
         </p>
       ) : view.state === "unset" ? (
         <div className="empty" style={{ padding: "8px 0" }}>
@@ -118,12 +225,12 @@ export function LearningProgressCard({ student }: { student: Student }) {
         </div>
       ) : (
         <>
-          <BookSegments books={books} completed={view.completedBookIds} activeId={view.state === "active" ? (book?.id ?? null) : null} />
+          <BookSegments books={scope.books.filter((b) => !b.archived_at)} completed={view.completedBookIds} activeId={view.state === "active" ? (book?.id ?? null) : null} />
           <dl className="lp__grid">
             <div><dt>Hozirgi level</dt><dd>{sum.level ?? "Belgilanmagan"}</dd></div>
             <div>
               <dt>Hozirgi kitob</dt>
-              <dd>{view.state === "done" ? "Dastur yakunlangan" : book ? `${book.title} (${book.position}-kitob / ${books.length})` : "—"}</dd>
+              <dd>{view.state === "done" ? "Dastur yakunlangan" : book ? `${book.title} (${ordered.findIndex((b) => b.id === book.id) + 1}-kitob / ${total})` : "—"}</dd>
             </div>
             {activeStint && (
               <>
@@ -180,11 +287,11 @@ export function LearningProgressCard({ student }: { student: Student }) {
         </>
       )}
 
-      {stints.length > 0 && (
+      {scope.stints.length > 0 && (
         <div>
           <h3 className="lp__sub">Kitoblar tarixi</h3>
           <ul className="lp__hist">
-            {[...stints].reverse().map((s) => (
+            {[...scope.stints].reverse().map((s) => (
               <li key={s.id}>
                 <span>
                   <strong>{bookById.get(s.book_id)?.title ?? "Kitob"}</strong>
@@ -201,49 +308,8 @@ export function LearningProgressCard({ student }: { student: Student }) {
         </div>
       )}
 
-      {transfers.length > 0 && (
-        <div>
-          <h3 className="lp__sub"><IconTransfer aria-hidden /> Guruh tarixi</h3>
-          <ul className="lp__hist">
-            {[...transfers].reverse().map((t) => (
-              <li key={t.id}>
-                <span>{groupName(t.from_group_id)} → {groupName(t.to_group_id)}</span>
-                <span className="hint">{formatDate(t.transferred_at.slice(0, 10))}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <details className="own-dates">
-        <summary>Prognoz va hisobot sozlamalari</summary>
-        <form className="stack" style={{ marginTop: 10 }} onSubmit={saveSet}>
-          <label className="field">
-            <span className="field__label">Haftalik darslar soni</span>
-            <select className="select" value={lpw ?? String(progress?.lessons_per_week ?? "")} onChange={(e) => setLpw(e.target.value)}>
-              <option value="">Kiritilmagan</option>
-              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">O&apos;qituvchi xulosasi (ota-onalar hisoboti uchun)</span>
-            <textarea className="input" maxLength={1000} value={note ?? progress?.teacher_note ?? ""} onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field__label">Keyingi o&apos;quv maqsadi</span>
-            <input className="input" maxLength={300} value={goal ?? progress?.next_goal ?? ""} onChange={(e) => setGoal(e.target.value)} />
-          </label>
-          <div>
-            <button className="btn btn--primary" type="submit" disabled={lpw === null && note === null && goal === null}>Saqlash</button>
-          </div>
-        </form>
-      </details>
-
-      <SetStageDialog open={setting} students={[student]} onClose={() => setSetting(false)} />
+      <SetStageDialog open={setting} students={[student]} programIds={[scope.program.id]} lockProgram onClose={() => setSetting(false)} />
       <FinishBookDialog open={finishing} student={student} stint={activeStint} onClose={() => setFinishing(false)} />
-    </section>
+    </div>
   );
 }
-

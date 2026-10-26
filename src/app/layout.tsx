@@ -3,8 +3,8 @@ import "@fontsource-variable/onest";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Jurnal", template: "%s · Jurnal" },
-  description: "Private tutor's lesson journal: attendance, topics, coins and leaderboards.",
+  title: { default: "Ark Progress", template: "%s · Ark Progress" },
+  description: "ARK Education: lesson journal, attendance, mock exams and learning progress.",
   robots: { index: false, follow: false },
 };
 

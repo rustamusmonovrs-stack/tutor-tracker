@@ -19,7 +19,7 @@ import {
 import { ConfirmDialog } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { todayISO } from "@/lib/dates";
-import { LEVELS, isLevel, sortBooks, type Level } from "@/lib/stages";
+import { LEVELS, isLevel, isSelectable, sortBooks, type Level } from "@/lib/stages";
 import { useStages } from "@/lib/stagesData";
 import { currentTopic } from "@/lib/progress";
 import { scoreLessons } from "@/lib/scoring";
@@ -189,7 +189,11 @@ function GroupBlock({
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const stages = useStages();
-  const books = useMemo(() => sortBooks(stages.books.filter((b) => b.active)), [stages.books]);
+  const bookGroups = useMemo(
+    () => stages.programs.map((p) => ({ program: p, books: sortBooks(stages.booksOf(p.id).filter(isSelectable)) })).filter((g) => g.books.length > 0),
+    [stages.programs, stages.booksOf],
+  );
+  const books = useMemo(() => bookGroups.flatMap((g) => g.books), [bookGroups]);
   const [bookId, setBookId] = useState("");
   const [level, setLevel] = useState<Level | "">("");
   const [started, setStarted] = useState(todayISO());
@@ -351,10 +355,14 @@ function GroupBlock({
                       }}
                     >
                       <option value="">{books.length ? "Kitob (ixtiyoriy)" : "O'quv dasturi to'ldirilmagan"}</option>
-                      {books.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.position}. {b.title}
-                        </option>
+                      {bookGroups.map((g) => (
+                        <optgroup key={g.program.id} label={g.program.name}>
+                          {g.books.map((b, i) => (
+                            <option key={b.id} value={b.id}>
+                              {i + 1}. {b.title}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                     <select className="select" aria-label="Hozirgi level" value={level} disabled={!bookId} onChange={(e) => setLevel(e.target.value as Level)}>

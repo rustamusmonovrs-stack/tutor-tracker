@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { CurriculumManager } from "@/components/CurriculumManager";
 import { BookSegments } from "@/components/LearningProgressCard";
 import { SetStageDialog } from "@/components/StageDialogs";
-import { IconArrowDown, IconArrowUp, IconChevronRight, IconSearch, IconStages, IconTrash } from "@/components/icons";
+import { IconChevronRight, IconSearch, IconStages } from "@/components/icons";
 import { Kpi } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { formatDate, todayISO } from "@/lib/dates";
-import { LEVELS, NO_DATA, isLevel, sortBooks, summarizeStudent, weeksText, type Book } from "@/lib/stages";
+import { NO_DATA, lessonsForProgress, summarizeStudent, weeksText } from "@/lib/stages";
 import { useStages } from "@/lib/stagesData";
 
 type Tab = "students" | "program";
@@ -54,7 +55,7 @@ export default function StagesPage() {
           </div>
         </div>
       )}
-      {status === "ready" && (tab === "students" ? <StudentsTab onProgram={() => setTab("program")} /> : <ProgramTab />)}
+      {status === "ready" && (tab === "students" ? <StudentsTab onProgram={() => setTab("program")} /> : <CurriculumManager />)}
     </>
   );
 }
@@ -63,7 +64,7 @@ export default function StagesPage() {
 
 function StudentsTab({ onProgram }: { onProgram: () => void }) {
   const { activeGroups, activeStudents, lessonsByStudent } = useData();
-  const { books, progressByStudent, stintsByStudent } = useStages();
+  const { books, progressByStudent, scopesOf, plans } = useStages();
   const [group, setGroup] = useState("all");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -73,17 +74,25 @@ function StudentsTab({ onProgram }: { onProgram: () => void }) {
 
   const rows = useMemo(
     () =>
-      activeStudents.map((student) => ({
-        student,
-        sum: summarizeStudent({
-          stints: stintsByStudent.get(student.id) ?? [],
-          progress: progressByStudent.get(student.id) ?? null,
-          books,
-          lessons: lessonsByStudent.get(student.id) ?? [],
-          today,
-        }),
-      })),
-    [activeStudents, stintsByStudent, progressByStudent, books, lessonsByStudent, today],
+      activeStudents.map((student) => {
+        const scopes = scopesOf(student.id);
+        const primary = scopes[0] ?? null;
+        const extra = scopes[1] ?? null;
+        return {
+          student,
+          primary,
+          extra,
+          sum: summarizeStudent({
+            stints: primary?.stints ?? [],
+            progress: progressByStudent.get(student.id) ?? null,
+            books: primary?.books ?? [],
+            // a Saturday set to mock / mini-test / no class never counts as a book lesson
+            lessons: lessonsForProgress(lessonsByStudent.get(student.id) ?? [], plans, { studentId: student.id, groupId: student.group_id, programId: primary?.program.id ?? null }),
+            today,
+          }),
+        };
+      }),
+    [activeStudents, scopesOf, progressByStudent, lessonsByStudent, plans, today],
   );
 
   const total = rows.length;
@@ -125,7 +134,7 @@ function StudentsTab({ onProgram }: { onProgram: () => void }) {
         <p className="callout" style={{ background: "var(--warn-soft)", color: "var(--warn)" }}>
           O&apos;quv dasturi to&apos;ldirilmagan.{" "}
           <button className="btn btn--sm" onClick={onProgram}>
-            9 ta kitobni sozlash
+            Kitoblarni sozlash
           </button>
         </p>
       )}
@@ -177,7 +186,7 @@ function StudentsTab({ onProgram }: { onProgram: () => void }) {
         {visible.length === 0 ? (
           <p className="empty">Hech kim topilmadi.</p>
         ) : (
-          visible.map(({ student, sum }) => (
+          visible.map(({ student, sum, primary, extra }) => (
             <div key={student.id} className="stage-row">
               <input type="checkbox" aria-label={`${student.name} ni tanlash`} checked={picked.includes(student.id)} onChange={() => toggle(student.id)} />
               <Link href={`/students/${student.id}`} className="stage-row__link">
@@ -185,7 +194,11 @@ function StudentsTab({ onProgram }: { onProgram: () => void }) {
                   <Avatar name={student.name} />
                   <span style={{ minWidth: 0 }}>
                     <span className="row__main">{student.name}</span>
-                    <span className="row__sub">{groupName(student.group_id)}</span>
+                    <span className="row__sub">
+                      {groupName(student.group_id)}
+                      {primary ? ` · ${primary.program.name}` : ""}
+                      {extra ? ` + ${extra.program.name}` : ""}
+                    </span>
                   </span>
                 </span>
                 <span className="stage-row__stage">
@@ -198,7 +211,7 @@ function StudentsTab({ onProgram }: { onProgram: () => void }) {
                         {sum.level && <span className="chip chip--brand">{sum.level}</span>}
                         {sum.ready && <span className="chip chip--ok">Tavsiya</span>}
                       </span>
-                      <BookSegments compact books={books} completed={sum.view.completedBookIds} activeId={sum.book?.id ?? null} />
+                      <BookSegments compact books={primary?.books.filter((b) => !b.archived_at) ?? []} completed={sum.view.completedBookIds} activeId={sum.book?.id ?? null} />
                       <span className="row__sub">
                         {sum.view.active ? `Boshlagan: ${formatDate(sum.view.active.started_on)}` : ""}
                         {sum.forecast?.ok && sum.forecast.finishOn
@@ -226,162 +239,5 @@ function StudentsTab({ onProgram }: { onProgram: () => void }) {
         }}
       />
     </>
-  );
-}
-
-// ------------------------------------------------------------------ curriculum
-
-function ProgramTab() {
-  const { books, seedBooks, saveBook, moveBook, deleteBook, bookInUse } = useStages();
-  const ordered = sortBooks(books);
-  const [busy, setBusy] = useState(false);
-
-  if (books.length === 0) {
-    return (
-      <div className="card empty">
-        <strong>O&apos;quv dasturi hali yaratilmagan</strong>
-        <p>9 ta vaqtinchalik nomli kitob (1-kitob … 9-kitob) yaratiladi. Haqiqiy nomlarni keyin o&apos;zingiz kiritasiz — ular butun tizimda avtomatik yangilanadi.</p>
-        <p style={{ marginTop: 14 }}>
-          <button
-            className="btn btn--primary"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              await seedBooks();
-              setBusy(false);
-            }}
-          >
-            9 ta kitobni yaratish
-          </button>
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <p className="hint" style={{ marginBottom: 8 }}>
-        Muddat va darslar sonini o&apos;qituvchi kiritadi. Kiritilmagan joylarda prognoz “ma&apos;lumot yetarli emas” deb ko&apos;rsatiladi. Ishlatilgan kitobni o&apos;chirib bo&apos;lmaydi — uni nofaol qiling.
-      </p>
-      <div className="stack" style={{ gap: 8 }}>
-        {ordered.map((b, i) => (
-          <BookRow key={b.id} book={b} first={i === 0} last={i === ordered.length - 1} inUse={bookInUse(b.id)} onSave={saveBook} onMove={moveBook} onDelete={deleteBook} />
-        ))}
-      </div>
-    </>
-  );
-}
-
-function BookRow({
-  book,
-  first,
-  last,
-  inUse,
-  onSave,
-  onMove,
-  onDelete,
-}: {
-  book: Book;
-  first: boolean;
-  last: boolean;
-  inUse: boolean;
-  onSave: (id: string, patch: { title?: string; level?: Book["level"]; avg_weeks?: number | null; planned_lessons?: number | null; active?: boolean }) => Promise<boolean>;
-  onMove: (id: string, d: -1 | 1) => Promise<boolean>;
-  onDelete: (id: string) => Promise<boolean>;
-}) {
-  const [title, setTitle] = useState(book.title);
-  const [weeks, setWeeks] = useState(book.avg_weeks?.toString() ?? "");
-  const [lessons, setLessons] = useState(book.planned_lessons?.toString() ?? "");
-  useEffect(() => setTitle(book.title), [book.title]);
-  useEffect(() => setWeeks(book.avg_weeks?.toString() ?? ""), [book.avg_weeks]);
-  useEffect(() => setLessons(book.planned_lessons?.toString() ?? ""), [book.planned_lessons]);
-
-  const num = (v: string, max: number) => {
-    if (v.trim() === "") return null;
-    const n = Math.round(Number(v));
-    return Number.isFinite(n) && n >= 1 && n <= max ? n : undefined; // undefined = invalid, ignored
-  };
-
-  return (
-    <section className={`card book-row${book.active ? "" : " book-row--off"}`} aria-label={`${book.position}-kitob`}>
-      <span className="book-row__pos">{book.position}</span>
-      <label className="field book-row__title">
-        <span className="field__label">Kitob nomi</span>
-        <input
-          className="input"
-          value={title}
-          maxLength={80}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => {
-            const t = title.trim();
-            if (!t) setTitle(book.title);
-            else if (t !== book.title) void onSave(book.id, { title: t });
-          }}
-        />
-      </label>
-      <label className="field">
-        <span className="field__label">Level</span>
-        <select className="select" value={book.level ?? ""} onChange={(e) => void onSave(book.id, { level: isLevel(e.target.value) ? e.target.value : null })}>
-          <option value="">Belgilanmagan</option>
-          {LEVELS.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        <span className="field__label">O&apos;rtacha muddat (hafta)</span>
-        <input
-          className="input"
-          inputMode="numeric"
-          placeholder="—"
-          value={weeks}
-          onChange={(e) => setWeeks(e.target.value.replace(/\D/g, ""))}
-          onBlur={() => {
-            const n = num(weeks, 156);
-            if (n === undefined) setWeeks(book.avg_weeks?.toString() ?? "");
-            else if (n !== book.avg_weeks) void onSave(book.id, { avg_weeks: n });
-          }}
-        />
-      </label>
-      <label className="field">
-        <span className="field__label">Rejalashtirilgan darslar</span>
-        <input
-          className="input"
-          inputMode="numeric"
-          placeholder="—"
-          value={lessons}
-          onChange={(e) => setLessons(e.target.value.replace(/\D/g, ""))}
-          onBlur={() => {
-            const n = num(lessons, 1000);
-            if (n === undefined) setLessons(book.planned_lessons?.toString() ?? "");
-            else if (n !== book.planned_lessons) void onSave(book.id, { planned_lessons: n });
-          }}
-        />
-      </label>
-      <div className="book-row__tools">
-        <label className="check">
-          <input type="checkbox" checked={book.active} onChange={(e) => void onSave(book.id, { active: e.target.checked })} />
-          Faol
-        </label>
-        <button className="icon-btn icon-btn--bare" aria-label={`${book.title}: yuqoriga`} disabled={first} onClick={() => void onMove(book.id, -1)}>
-          <IconArrowUp aria-hidden />
-        </button>
-        <button className="icon-btn icon-btn--bare" aria-label={`${book.title}: pastga`} disabled={last} onClick={() => void onMove(book.id, 1)}>
-          <IconArrowDown aria-hidden />
-        </button>
-        <button
-          className="icon-btn icon-btn--bare"
-          style={inUse ? undefined : { color: "var(--bad)" }}
-          aria-label={`${book.title}: o'chirish`}
-          title={inUse ? "Tarixda ishlatilgan — o'chirib bo'lmaydi, nofaol qiling" : "O'chirish"}
-          disabled={inUse}
-          onClick={() => void onDelete(book.id)}
-        >
-          <IconTrash aria-hidden />
-        </button>
-      </div>
-    </section>
   );
 }
