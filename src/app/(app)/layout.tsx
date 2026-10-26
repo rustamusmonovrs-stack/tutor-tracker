@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { DataProvider } from "@/lib/data";
+import { HomeworkProvider } from "@/lib/homeworkData";
 import { StagesProvider } from "@/lib/stagesData";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { AppShell } from "@/components/AppShell";
@@ -12,7 +13,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <DataProvider>
       <StagesProvider>
-        <AppShell>{children}</AppShell>
+        <HomeworkProvider>
+          <AppShell>{children}</AppShell>
+        </HomeworkProvider>
       </StagesProvider>
     </DataProvider>
   );

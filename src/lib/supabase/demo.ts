@@ -4,9 +4,10 @@
  * It is never enabled in production: the variable is not set on Vercel.
  */
 import { addDays, todayISO, weekStart } from "../dates";
+import { evaluateWatch, missedRun, type Assessment, type Assignment, type HwTask, type WatchCase } from "../homework";
 
 type Row = Record<string, unknown>;
-type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores" | "curriculum_programs" | "curriculum_books" | "student_learning_progress" | "student_book_history" | "student_group_transfer_history" | "student_programs" | "saturday_plans" | "certificates", Row[]>;
+type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores" | "curriculum_programs" | "curriculum_books" | "student_learning_progress" | "student_book_history" | "student_group_transfer_history" | "student_programs" | "saturday_plans" | "certificates" | "homework_tasks" | "student_task_assignments" | "student_task_assessments" | "homework_task_events" | "homework_watch_cases" | "homework_watch_case_events" | "homework_watch_notes", Row[]>;
 
 const STORAGE_KEY = "jurnal-demo-db-v2";
 const OBJECTS_KEY = "jurnal-demo-objects-v1";
@@ -81,7 +82,7 @@ function seed(): Tables {
         });
     });
   }
-  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [], curriculum_programs: [["general", "General English"], ["kids", "Kids English"], ["president", "Prezident maktabiga tayyorgarlik"]].map(([key, name], i) => ({ id: uuid(), key, name, position: i + 1, created_at: created })), curriculum_books: [], student_learning_progress: [], student_book_history: [], student_group_transfer_history: [], student_programs: [], saturday_plans: [], certificates: [] };
+  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [], curriculum_programs: [["general", "General English"], ["kids", "Kids English"], ["president", "Prezident maktabiga tayyorgarlik"]].map(([key, name], i) => ({ id: uuid(), key, name, position: i + 1, created_at: created })), curriculum_books: [], student_learning_progress: [], student_book_history: [], student_group_transfer_history: [], student_programs: [], saturday_plans: [], certificates: [], homework_tasks: [], student_task_assignments: [], student_task_assessments: [], homework_task_events: [], homework_watch_cases: [], homework_watch_case_events: [], homework_watch_notes: [] };
 }
 
 function load(): Tables {
@@ -234,6 +235,11 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
         t.student_group_transfer_history = t.student_group_transfer_history.filter((x) => !ids.has(x.student_id));
         t.student_programs = t.student_programs.filter((x) => !ids.has(x.student_id));
         t.saturday_plans = t.saturday_plans.filter((x) => !ids.has(x.student_id));
+        for (const k of ["student_task_assignments", "student_task_assessments", "homework_task_events", "homework_watch_cases", "homework_watch_notes"] as const) t[k] = t[k].filter((x) => !ids.has(x.student_id));
+      }
+      if (this.table === "homework_tasks" && t.student_task_assessments.some((a) => ids.has(a.task_id))) {
+        t.homework_tasks = rows;
+        return { data: null, error: { message: "graded task cannot be deleted; archive it instead" } };
       }
     } else if (this.op === "upsert") {
       const items = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
@@ -272,6 +278,127 @@ function rpc(name: string, a: Record<string, unknown>): Result {
     if (hit) Object.assign(hit, { level });
     else t.student_learning_progress.push({ id: uuid(), student_id: sid, level, lessons_per_week: null, teacher_note: null, next_goal: null });
   };
+
+  // ---- Smart Homework (mirrors 20261028_smart_homework.sql) ----
+  const hw = {
+    recompute(sid: string) {
+      const st = t.students.find((x) => x.id === sid);
+      if (!st) return;
+      const today = todayISO();
+      const asg = t.student_task_assignments as unknown as Assignment[];
+      const ass = t.student_task_assessments as unknown as Assessment[];
+      const absent = new Set(t.lessons.filter((l) => l.student_id === sid && l.attendance === "absent").map((l) => l.lesson_date as string));
+      const mocks = new Set(t.mocks.filter((m) => m.group_id === st.group_id).map((m) => m.mock_date as string));
+      const run = missedRun({ student: { id: sid, group_id: st.group_id as string }, today, tasks: t.homework_tasks as unknown as HwTask[], assignments: asg, assessments: ass, absentDates: absent, mockDates: mocks });
+      const active = t.homework_watch_cases.find((c) => c.student_id === sid && c.status === "active") as (Row & Pick<WatchCase, "task_ids">) | undefined;
+      const act = evaluateWatch(active ?? null, run, ass, sid);
+      const ev = (case_id: unknown, kind: string, meta: Row) => t.homework_watch_case_events.push({ id: uuid(), case_id, kind, at: iso(), meta });
+      if (act.kind === "open") {
+        const c = { id: uuid(), student_id: sid, group_id: st.group_id, status: "active", task_ids: act.taskIds, opened_at: iso(), last_activity_on: today, resolved_at: null, resolve_reason: null };
+        t.homework_watch_cases.push(c);
+        ev(c.id, "opened", { lessons: run.lessons });
+      } else if (act.kind === "update" && active) {
+        Object.assign(active, { task_ids: act.taskIds, last_activity_on: today });
+        ev(active.id, "updated", {});
+      } else if (act.kind === "resolve" && active) {
+        Object.assign(active, { status: "resolved", resolved_at: iso(), task_ids: act.taskIds, resolve_reason: act.reason, last_activity_on: today });
+        ev(active.id, "resolved", { reason: act.reason });
+      }
+    },
+    apply(task: string, sid: string, status: string | null, late: boolean, kind: string, rewarded?: string | null): Row {
+      if (status !== null && !["full", "partial", "not_done"].includes(status)) throw new Error("invalid status");
+      const tk = t.homework_tasks.find((x) => x.id === task);
+      if (!tk) throw new Error("task not found");
+      if (!t.student_task_assignments.some((x) => x.task_id === task && x.student_id === sid)) throw new Error("student is not assigned to this task");
+      const prev = t.student_task_assessments.find((x) => x.task_id === task && x.student_id === sid);
+      const log = (from: unknown, to: unknown) => t.homework_task_events.push({ id: uuid(), task_id: task, student_id: sid, kind, from_status: from ?? null, to_status: to ?? null, at: iso(), meta: { late } });
+      if (status === null) {
+        if (prev) {
+          t.student_task_assessments = t.student_task_assessments.filter((x) => x !== prev);
+          log(prev.status, null);
+        }
+      } else if (!prev || prev.status !== status) {
+        const rew = status !== "full" ? null : (rewarded ?? (late ? todayISO() : (tk.lesson_date as string)));
+        const row = {
+          task_id: task, student_id: sid, status, coins: status === "full" ? 1 : 0, graded_at: iso(), rewarded_on: rew,
+          completed_late: late && status === "full" || (status === "full" && !!prev?.completed_late && prev?.status === "full"),
+          original_status: prev?.original_status ?? (prev && prev.status !== "full" ? prev.status : null),
+          original_graded_at: prev?.original_graded_at ?? (prev && prev.status !== "full" ? prev.graded_at : null),
+        };
+        if (prev) Object.assign(prev, row);
+        else t.student_task_assessments.push(row);
+        log(prev?.status, status);
+      }
+      hw.recompute(sid);
+      return { task, student: sid, status, coins: status === "full" ? 1 : 0 };
+    },
+  };
+  if (name === "assign_task") {
+    const { p_task, p_students } = a as { p_task: string; p_students: string[] | null };
+    const tk = t.homework_tasks.find((x) => x.id === p_task);
+    if (!tk) return bad("task not found");
+    if (tk.archived_at) return bad("task is archived");
+    let n = 0;
+    for (const st of t.students.filter((s) => s.group_id === tk.group_id && !s.archived_at && (!p_students || p_students.includes(s.id as string)))) {
+      if (t.student_task_assignments.some((x) => x.task_id === p_task && x.student_id === st.id)) continue;
+      t.student_task_assignments.push({ task_id: p_task, student_id: st.id, assigned_at: iso() });
+      t.homework_task_events.push({ id: uuid(), task_id: p_task, student_id: st.id, kind: "assigned", from_status: null, to_status: null, at: iso(), meta: {} });
+      n += 1;
+      hw.recompute(st.id as string);
+    }
+    persist();
+    return { data: n, error: null };
+  }
+  if (name === "unassign_task") {
+    const { p_task, p_student } = a as { p_task: string; p_student: string };
+    if (t.student_task_assessments.some((x) => x.task_id === p_task && x.student_id === p_student)) return bad("graded assignment cannot be removed; clear the grade first");
+    t.student_task_assignments = t.student_task_assignments.filter((x) => !(x.task_id === p_task && x.student_id === p_student));
+    hw.recompute(p_student);
+    persist();
+    return { data: null, error: null };
+  }
+  if (name === "grade_task") {
+    const { p_task, p_student, p_status, p_late } = a as { p_task: string; p_student: string; p_status: string | null; p_late?: boolean };
+    try {
+      const out = hw.apply(p_task, p_student, p_status, !!p_late, p_late ? "late_completed" : "graded");
+      persist();
+      return { data: out, error: null };
+    } catch (e) {
+      return bad((e as Error).message);
+    }
+  }
+  if (name === "grade_tasks_bulk") {
+    const { p_group, p_date, p_task, p_overwrite, p_dry } = a as { p_group: string; p_date: string; p_task: string | null; p_overwrite: boolean; p_dry: boolean };
+    let set = 0, ow = 0, kept = 0;
+    const previous: Row[] = [];
+    for (const tk of t.homework_tasks.filter((x) => x.group_id === p_group && x.lesson_date === p_date && !x.archived_at && (!p_task || x.id === p_task))) {
+      for (const sa of t.student_task_assignments.filter((x) => x.task_id === tk.id)) {
+        const st = t.students.find((s) => s.id === sa.student_id);
+        if (!st || st.archived_at) continue;
+        const prev = t.student_task_assessments.find((x) => x.task_id === tk.id && x.student_id === sa.student_id);
+        if (prev?.status === "full" || (prev && !p_overwrite)) { kept += 1; continue; }
+        if (prev) ow += 1; else set += 1;
+        if (!p_dry) {
+          previous.push({ t: tk.id, s: sa.student_id, p: prev?.status ?? null, r: prev?.rewarded_on ?? null, l: prev?.completed_late ?? null });
+          hw.apply(tk.id as string, sa.student_id as string, "full", false, "bulk_full");
+        }
+      }
+    }
+    persist();
+    return { data: { set, overwritten: ow, kept, previous, dry: !!p_dry }, error: null };
+  }
+  if (name === "restore_assessments") {
+    const { p_items } = a as { p_items: { t: string; s: string; p: string | null; r: string | null }[] };
+    for (const it of p_items) hw.apply(it.t, it.s, it.p, false, "undo", it.r || null);
+    persist();
+    return { data: p_items.length, error: null };
+  }
+  if (name === "refresh_watch_cases") {
+    const ids = new Set([...t.student_task_assignments.map((x) => x.student_id as string), ...t.homework_watch_cases.filter((c) => c.status === "active").map((c) => c.student_id as string)]);
+    ids.forEach((sid) => hw.recompute(sid));
+    persist();
+    return { data: ids.size, error: null };
+  }
   if (name === "set_students_stage") {
     const { p_students, p_book, p_level, p_started_on, p_dates, p_track } = a as { p_students: string[]; p_book: string; p_level: string; p_started_on: string; p_dates: Record<string, string>; p_track?: string };
     const track = p_track ?? "primary";

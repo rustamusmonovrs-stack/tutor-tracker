@@ -19,6 +19,7 @@ import {
 import { LearningProgressCard } from "@/components/LearningProgressCard";
 import { AttendanceMarks, ConfirmDialog, HomeworkMarks, Kpi, SaveChip } from "@/components/ui";
 import { useData } from "@/lib/data";
+import { useHomework } from "@/lib/homeworkData";
 import { useStages } from "@/lib/stagesData";
 import { addDays, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic, repeatCount, topicStatuses } from "@/lib/progress";
@@ -47,6 +48,7 @@ export default function StudentPage() {
     moveTopic,
     plans,
   } = useData();
+  const { coinEvents } = useHomework();
 
   const { transferStudent } = useStages();
   const student = students.find((s) => s.id === id);
@@ -83,10 +85,12 @@ export default function StudentPage() {
       return { start, sum };
     });
   }, [scored, thisWeek]);
-  const monthCoins = scored
-    .filter((s) => s.lesson.lesson_date >= addDays(today, -29))
-    .reduce((t, s) => t + s.coins, 0);
-  const weekCoins = weekly[WEEKS - 1].sum.coins;
+  const myTaskCoins = useMemo(() => coinEvents.filter((e) => e.student_id === id), [coinEvents, id]);
+  const taskIn = (a: string, b: string) => myTaskCoins.filter((e) => e.date >= a && e.date <= b).reduce((t, e) => t + e.coins, 0);
+  const monthCoins =
+    scored.filter((s) => s.lesson.lesson_date >= addDays(today, -29)).reduce((t, s) => t + s.coins, 0) + taskIn(addDays(today, -29), today);
+  const weekCoins = weekly[WEEKS - 1].sum.coins + taskIn(thisWeek, addDays(thisWeek, 6));
+  const totalCoins = all.coins + myTaskCoins.reduce((t, e) => t + e.coins, 0);
 
   const planFor = (date: string) =>
     plans.find((p) => p.group_id === student?.group_id && p.lesson_date === date);
@@ -180,7 +184,7 @@ export default function StudentPage() {
       </div>
 
       <div className="kpis">
-        <Kpi label="Jami tanga" value={all.coins} note={`Hafta: ${weekCoins} · 30 kun: ${monthCoins}`} />
+        <Kpi label="Jami tanga" value={totalCoins} note={`Hafta: ${weekCoins} · 30 kun: ${monthCoins}`} />
         <Kpi label="Joriy seriya" value={streak} unit="ta" note="Ketma-ket to'liq vazifa" />
         <Kpi
           label="Davomat"
@@ -206,7 +210,7 @@ export default function StudentPage() {
           <div className="card chart">
             <span className="chart__title">Haftalik tanga</span>
             <StackedBars
-              data={weekly.map((w) => ({ label: formatShort(w.start), values: { coins: w.sum.coins } }))}
+              data={weekly.map((w) => ({ label: formatShort(w.start), values: { coins: w.sum.coins + taskIn(w.start, addDays(w.start, 6)) } }))}
               series={coinSeries}
               summary={`Oxirgi ${WEEKS} hafta bo'yicha tangalar`}
             />

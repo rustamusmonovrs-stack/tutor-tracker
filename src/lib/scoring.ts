@@ -86,15 +86,21 @@ export function buildStandings(
   students: Student[],
   lessons: Lesson[],
   range: DateRange,
+  /** Smart-homework coins (1 per To'liq task, dated by reward date), added to the same totals. */
+  extra: ReadonlyArray<{ student_id: string; date: string; coins: number }> = [],
 ): Standing[] {
   const byStudent = groupByStudent(lessons);
+  const extraBy = new Map<string, number>();
+  for (const e of extra) {
+    if (inRange(e.date, range)) extraBy.set(e.student_id, (extraBy.get(e.student_id) ?? 0) + e.coins);
+  }
   const rows = students.map((student) => {
     const scored = scoreLessons(byStudent.get(student.id) ?? []).filter((s) =>
       inRange(s.lesson.lesson_date, range),
     );
     return {
       student,
-      coins: scored.reduce((sum, s) => sum + s.coins, 0),
+      coins: scored.reduce((sum, s) => sum + s.coins, 0) + (extraBy.get(student.id) ?? 0),
       attended: scored.filter((s) => s.lesson.attendance === "present").length,
       absent: scored.filter((s) => s.lesson.attendance === "absent").length,
       full: scored.filter((s) => s.lesson.homework === "full").length,

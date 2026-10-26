@@ -3,13 +3,19 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { IconChevronLeft, IconChevronRight, IconCoin, IconAlert, IconBook, IconCopy, IconHistory, IconPresent, IconTask } from "@/components/icons";
-import { AttendanceMarks, HomeworkMarks, Meter, SaveChip } from "@/components/ui";
+import { HomeworkDrawer } from "@/components/HomeworkDrawer";
+import { ProgressButton } from "@/components/HomeworkParts";
+import { HomeworkTasks } from "@/components/HomeworkTasks";
+import { IconChevronLeft, IconChevronRight, IconCoin, IconAlert, IconBook, IconHistory, IconPresent, IconWatch } from "@/components/icons";
+import { AttendanceMarks, Meter, SaveChip } from "@/components/ui";
+import { HOMEWORK_META } from "@/lib/config";
+import { studentProgress } from "@/lib/homework";
+import { useHomework } from "@/lib/homeworkData";
 import { useData, type PlanPatch } from "@/lib/data";
 import { addDays, formatDay, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic } from "@/lib/progress";
 import { scoreLessons } from "@/lib/scoring";
-import type { Attendance, Homework, Student } from "@/lib/types";
+import type { Attendance, Student } from "@/lib/types";
 
 const PLAN_DEBOUNCE_MS = 800;
 
@@ -26,6 +32,8 @@ export default function TodayPage() {
     savePlan,
     isSaving,
   } = data;
+  const hw = useHomework();
+  const [drawerFor, setDrawerFor] = useState<Student | null>(null);
 
   const today = todayISO();
   const [date, setDate] = useState(today);
@@ -43,7 +51,6 @@ export default function TodayPage() {
   // ---- lesson info: topic taught + homework assigned (stored in Supabase, autosaved) -----
   const plan = plans.find((p) => p.group_id === group?.id && p.lesson_date === date);
   const [topicDraft, setTopicDraft] = useState(plan?.topic ?? "");
-  const [hwDraft, setHwDraft] = useState(plan?.homework ?? "");
   const [planState, setPlanState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   type Pending = { groupId: string; date: string; patch: PlanPatch };
   const pending = useRef<Pending | null>(null);
@@ -87,7 +94,6 @@ export default function TodayPage() {
     // Switching group or day: save what was typed, then show the stored values for the new one.
     const stored = plans.find((p) => p.group_id === groupKey && p.lesson_date === date);
     setTopicDraft(stored?.topic ?? "");
-    setHwDraft(stored?.homework ?? "");
     setPlanState("idle");
     return () => flush();
     // `plans` is intentionally not a dependency: remote updates must not overwrite what is being typed.
@@ -95,8 +101,7 @@ export default function TodayPage() {
   }, [groupKey, date, flush]);
 
   function onField(field: keyof PlanPatch, text: string) {
-    if (field === "topic") setTopicDraft(text);
-    else setHwDraft(text);
+    setTopicDraft(text);
     if (!group) return;
     const cur = pending.current;
     pending.current = {
@@ -125,23 +130,36 @@ export default function TodayPage() {
   const weekFrom = weekStart(date);
   const weekTo = addDays(weekFrom, 6);
 
+  const dayTasks = useMemo(() => (group ? hw.tasksFor(group.id, date) : []), [hw, group, date]);
+  const dayTaskIds = useMemo(() => dayTasks.map((t) => t.id), [dayTasks]);
+
   const rows = roster.map((student) => {
     const lessons = lessonsByStudent.get(student.id) ?? [];
     const existing = lessons.find((l) => l.lesson_date === date);
     const scored = scoredByStudent.get(student.id) ?? [];
-    const dayCoins = existing ? (scored.find((s) => s.lesson.id === existing.id)?.coins ?? 0) : 0;
-    const weekCoins = scored
-      .filter((s) => s.lesson.lesson_date >= weekFrom && s.lesson.lesson_date <= weekTo)
-      .reduce((sum, s) => sum + s.coins, 0);
+    const taskEvents = hw.coinEvents.filter((e) => e.student_id === student.id);
+    const dayCoins =
+      (existing ? (scored.find((s) => s.lesson.id === existing.id)?.coins ?? 0) : 0) +
+      taskEvents.filter((e) => e.date === date).reduce((sum, e) => sum + e.coins, 0);
+    const weekCoins =
+      scored
+        .filter((s) => s.lesson.lesson_date >= weekFrom && s.lesson.lesson_date <= weekTo)
+        .reduce((sum, s) => sum + s.coins, 0) +
+      taskEvents.filter((e) => e.date >= weekFrom && e.date <= weekTo).reduce((sum, e) => sum + e.coins, 0);
+    const progress = studentProgress(dayTaskIds, student.id, hw.assignedSet, hw.assessMap);
     const topics = topicsByStudent.get(student.id) ?? [];
     const planned = topics.length ? currentTopic(topics, lessons.filter((l) => l.lesson_date < date)) : null;
-    return { student, existing, dayCoins, weekCoins, planned };
+    return { student, existing, dayCoins, weekCoins, planned, progress };
   });
 
   const attMarked = rows.filter((r) => r.existing?.attendance).length;
-  const hwGraded = rows.filter((r) => r.existing?.homework).length;
   const present = rows.filter((r) => r.existing?.attendance === "present").length;
-  const hwTarget = Math.max(present, hwGraded);
+  // With structured tasks: graded / assigned task slots. Without: the old per-lesson grade counts.
+  const hwSlots = rows.reduce((n, r) => n + r.progress.assigned, 0);
+  const hwDone = rows.reduce((n, r) => n + r.progress.graded, 0);
+  const legacyGraded = rows.filter((r) => r.existing?.homework).length;
+  const hwGraded = dayTasks.length ? hwDone : legacyGraded;
+  const hwTarget = dayTasks.length ? hwSlots : Math.max(present, legacyGraded);
 
   function createArgs(row: (typeof rows)[number]) {
     return {
@@ -152,9 +170,6 @@ export default function TodayPage() {
 
   function setAttendance(row: (typeof rows)[number], value: Attendance | null) {
     void markLesson({ student: row.student, date, attendance: value, ...createArgs(row) });
-  }
-  function setHomework(row: (typeof rows)[number], value: Homework | null) {
-    void markLesson({ student: row.student, date, homework: value, ...createArgs(row) });
   }
 
   const unmarked: Student[] = rows.filter((r) => !r.existing).map((r) => r.student);
@@ -251,20 +266,6 @@ export default function TodayPage() {
                 onBlur={flush}
               />
             </label>
-            <label className="field">
-              <span className="field__label">
-                <IconTask aria-hidden /> Uyga vazifa
-              </span>
-              <textarea
-                className="input"
-                value={hwDraft}
-                rows={2}
-                maxLength={1000}
-                placeholder="Masalan: Round Up 2, 45-bet, 1–5-mashqlar"
-                onChange={(e) => onField("homework", e.target.value)}
-                onBlur={flush}
-              />
-            </label>
           </div>
           {previousPlans.length > 0 && (
             <details className="plan__prev">
@@ -279,21 +280,20 @@ export default function TodayPage() {
                       {p.topic && <strong>{p.topic}</strong>}
                       {p.homework && <small>{p.homework}</small>}
                     </span>
-                    {p.homework && (
-                      <button
-                        className="btn btn--ghost btn--sm"
-                        onClick={() => onField("homework", p.homework ?? "")}
-                        title="Vazifani bugunga nusxalash"
-                      >
-                        <IconCopy aria-hidden /> Nusxa
-                      </button>
-                    )}
                   </div>
                 ))}
               </div>
             </details>
           )}
         </div>
+        {group && (
+          <HomeworkTasks
+            group={group}
+            date={date}
+            roster={roster}
+            legacyText={plan?.homework ?? null}
+          />
+        )}
         {rows.length > 0 && (
           <div className="progress-strip" style={{ borderTop: "1px solid var(--line)" }}>
             <div className="progress-strip__item">
@@ -328,63 +328,77 @@ export default function TodayPage() {
           </div>
         ) : (
           <>
-            <div className="roster__head" aria-hidden={false}>
+            <div className="roster__head roster__head--hw">
               <span>O&apos;quvchi</span>
-              <span>Hafta</span>
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 Davomat
                 {unmarked.length > 0 && (
                   <button
                     className="btn btn--sm"
                     style={{ height: 24 }}
-                    onClick={() => void markAttendanceBulk(unmarked, date, "present")}
+                    onClick={() => void markAttendanceBulk(unmarked, date, "present").then(() => hw.refreshCases())}
                     title="Belgilanmaganlarni Keldi deb belgilash"
                   >
                     <IconPresent aria-hidden /> Hammasi keldi
                   </button>
                 )}
               </span>
-              <span>Uy vazifasi</span>
+              <span>Vazifalar</span>
+              <span>Tanga</span>
+              <span className="sr-only">Amallar</span>
             </div>
             <ul className="roster">
               {rows.map((row) => {
                 const busy = isSaving(row.student.id);
                 const att = row.existing?.attendance ?? null;
-                const hw = row.existing?.homework ?? null;
+                const legacyHw = row.existing?.homework ?? null;
                 return (
-                  <li className="student" key={row.student.id}>
-                    <div className="student__top">
-                      <Link href={`/students/${row.student.id}`} className="student__who">
-                        <Avatar name={row.student.name} />
-                        <span style={{ minWidth: 0 }}>
-                          <span className="student__name" style={{ display: "block" }}>
-                            {row.student.name}
-                            {busy && <span className="student__spin" role="status" aria-label="Saqlanmoqda" style={{ display: "inline-block" }} />}
-                          </span>
-                          {row.planned && <span className="student__sub">Mavzu: {row.planned.title}</span>}
+                  <li className="student student--hw" key={row.student.id}>
+                    <Link href={`/students/${row.student.id}`} className="student__who">
+                      <Avatar name={row.student.name} />
+                      <span style={{ minWidth: 0 }}>
+                        <span className="student__name" style={{ display: "block" }}>
+                          {row.student.name}
+                          {busy && <span className="student__spin" role="status" aria-label="Saqlanmoqda" style={{ display: "inline-block" }} />}
                         </span>
-                      </Link>
-                      <span className="student__coins" style={{ display: "flex", gap: 6 }}>
-                        {row.dayCoins > 0 && (
-                          <span className="coins coins--delta" title="Shu dars uchun">
-                            +{row.dayCoins}
-                          </span>
-                        )}
-                        <span className="coins" title="Shu haftadagi tangalar">
-                          <IconCoin aria-hidden />
-                          {row.weekCoins}
-                        </span>
+                        {row.planned && <span className="student__sub">Mavzu: {row.planned.title}</span>}
                       </span>
-                    </div>
-                    <div className="student__marks">
-                      <AttendanceMarks name={row.student.name} value={att} disabled={busy} onChange={(v) => setAttendance(row, v)} />
-                      <HomeworkMarks
+                    </Link>
+                    <span className="student__coins" style={{ display: "flex", gap: 6 }}>
+                      {row.dayCoins > 0 && (
+                        <span className="coins coins--delta" title="Shu dars uchun">
+                          +{row.dayCoins}
+                        </span>
+                      )}
+                      <span className="coins" title="Shu haftadagi tangalar">
+                        <IconCoin aria-hidden />
+                        {row.weekCoins}
+                      </span>
+                    </span>
+                    <div className="student__att">
+                      <AttendanceMarks
                         name={row.student.name}
-                        value={hw}
-                        muted={att === "absent" && !hw}
+                        value={att}
                         disabled={busy}
-                        onChange={(v) => setHomework(row, v)}
+                        onChange={(v) => {
+                          setAttendance(row, v);
+                          void hw.refreshCases();
+                        }}
                       />
+                    </div>
+                    <div className="student__hw">
+                      <ProgressButton
+                        progress={row.progress}
+                        tasksExist={dayTasks.length > 0}
+                        legacy={legacyHw ? HOMEWORK_META[legacyHw].label : null}
+                        name={row.student.name}
+                        onClick={() => setDrawerFor(row.student)}
+                      />
+                    </div>
+                    <div className="student__act">
+                      <button className="icon-btn icon-btn--bare" aria-label={`${row.student.name}: vazifalarni ochish`} title="Vazifalar" onClick={() => setDrawerFor(row.student)}>
+                        <IconWatch />
+                      </button>
                     </div>
                   </li>
                 );
@@ -393,6 +407,8 @@ export default function TodayPage() {
           </>
         )}
       </div>
+
+      {group && <HomeworkDrawer student={drawerFor} group={group} date={date} legacy={drawerFor ? (rows.find((r) => r.student.id === drawerFor.id)?.existing?.homework ?? null) : null} onClose={() => setDrawerFor(null)} />}
     </>
   );
 }
