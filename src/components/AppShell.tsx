@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { IconMock, IconPeople, IconRank, IconStages, IconStats, IconToday } from "@/components/icons";
+import { IconAward, IconMock, IconPeople, IconRank, IconStages, IconStats, IconToday } from "@/components/icons";
 import { useData } from "@/lib/data";
 
 const LINKS = [
@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/students", label: "O'quvchilar", icon: IconPeople },
   { href: "/stages", label: "Bosqichlar", icon: IconStages },
   { href: "/stats", label: "Statistika", icon: IconStats },
+  { href: "/results", label: "Bizning natijalar", short: "Natijalar", icon: IconAward },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -31,12 +32,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             <small>ARK Education</small>
           </span>
         </div>
-        {LINKS.map(({ href, label, icon: Icon }) => {
+        {LINKS.map(({ href, label, icon: Icon, ...rest }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link key={href} href={href} className="nav__link" aria-current={active ? "page" : undefined}>
               <Icon aria-hidden />
-              {label}
+              {"short" in rest ? (
+                <>
+                  <span className="nav__long">{label}</span>
+                  <span className="nav__short" aria-hidden>{rest.short}</span>
+                </>
+              ) : (
+                label
+              )}
             </Link>
           );
         })}
