@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Jurnal",
-    short_name: "Jurnal",
-    description: "Lesson journal for my groups",
+    name: "Ark Progress",
+    short_name: "Ark Progress",
+    description: "ARK Education: lesson journal and learning progress",
     start_url: "/",
     display: "standalone",
     background_color: "#edf0f5",

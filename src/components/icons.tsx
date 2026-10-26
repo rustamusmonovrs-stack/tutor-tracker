@@ -1,5 +1,9 @@
 import type { SVGProps } from "react";
 export {
+  Award as IconAward,
+  Upload as IconUpload,
+  EyeOff as IconEyeOff,
+  Globe as IconGlobe,
   CalendarCheck as IconToday,
   Trophy as IconRank,
   Users as IconPeople,

@@ -24,11 +24,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav className="nav" aria-label="Main">
         <div className="nav__brand">
           <span className="nav__mark" aria-hidden>
-            J
+            A
           </span>
           <span className="nav__name">
-            Jurnal
-            <small>Ark Education</small>
+            Ark Progress
+            <small>ARK Education</small>
           </span>
         </div>
         {LINKS.map(({ href, label, icon: Icon }) => {

@@ -39,7 +39,7 @@ export default function LoginPage() {
     <main className="center-screen">
       <form className="login stack" onSubmit={onSubmit}>
         <div>
-          <h1 className="login__brand">Jurnal</h1>
+          <h1 className="login__brand">Ark Progress</h1>
           <p className="login__lead">Davomat, uy vazifasi va tangalar. Faqat o&apos;qituvchi uchun.</p>
         </div>
 

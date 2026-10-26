@@ -4,20 +4,39 @@ import { useEffect, useMemo, useState } from "react";
 import { FormDialog } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { todayISO } from "@/lib/dates";
-import { LEVELS, isLevel, nextLevel, sortBooks, stageView, type BookStint, type Level, type Outcome } from "@/lib/stages";
+import { LEVELS, isLevel, isSelectable, nextLevel, sortBooks, stageView, type BookStint, type Level, type Outcome, type Track } from "@/lib/stages";
 import { useStages } from "@/lib/stagesData";
 import type { Student } from "@/lib/types";
 
 const OUTCOMES: { id: Outcome; label: string }[] = [
   { id: "next", label: "Keyingi kitobga o'tdi" },
   { id: "repeat", label: "Shu kitobni qayta o'qiydi" },
-  { id: "program_done", label: "9 kitoblik dasturni yakunladi" },
+  { id: "program_done", label: "Dasturni yakunladi" },
 ];
 
-/** Place one or many students on a book + level + start date (bulk). Each student may keep their own real start date. */
-export function SetStageDialog({ open, students, onClose }: { open: boolean; students: Student[]; onClose: (saved: boolean) => void }) {
-  const { books, bookById, stintsByStudent, setStage } = useStages();
-  const ordered = useMemo(() => sortBooks(books.filter((b) => b.active)), [books]);
+/**
+ * Place one or many students on a program + book + level + start date.
+ * The first program of a student is their primary one; a second program becomes the additional track.
+ * Nobody is placed automatically: only the students passed in are touched.
+ */
+export function SetStageDialog({
+  open,
+  students,
+  onClose,
+  programIds,
+  lockProgram = false,
+}: {
+  open: boolean;
+  students: Student[];
+  onClose: (saved: boolean) => void;
+  /** Programs offered in the picker (default: all). */
+  programIds?: string[];
+  /** Program picker disabled (correcting an existing track). */
+  lockProgram?: boolean;
+}) {
+  const { programs, booksOf, bookById, scopesOf, setStage } = useStages();
+  const offered = useMemo(() => programs.filter((p) => !programIds || programIds.includes(p.id)), [programs, programIds]);
+  const [programId, setProgramId] = useState("");
   const [bookId, setBookId] = useState("");
   const [level, setLevel] = useState<Level | "">("");
   const [started, setStarted] = useState(todayISO());
@@ -26,18 +45,48 @@ export function SetStageDialog({ open, students, onClose }: { open: boolean; stu
 
   useEffect(() => {
     if (open) {
+      const prefer = students.length === 1 ? scopesOf(students[0].id)[0]?.program.id : undefined;
+      setProgramId(offered.find((p) => p.id === prefer)?.id ?? offered[0]?.id ?? "");
       setBookId("");
       setLevel("");
       setStarted(todayISO());
       setOwn({});
       setBusy(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Students whose program is already finished cannot be placed again.
-  const blocked = students.filter((s) => stageView(stintsByStudent.get(s.id) ?? []).state === "done");
-  const targets = students.filter((s) => !blocked.includes(s));
+  const ordered = useMemo(() => sortBooks(booksOf(programId).filter(isSelectable)), [booksOf, programId]);
+
+  // Per student: which track this program is for them, or why they are skipped.
+  const plan = students.map((s) => {
+    const scopes = scopesOf(s.id);
+    const existing = scopes.find((x) => x.program.id === programId);
+    let track: Track | null;
+    let reason = "";
+    if (existing) {
+      track = existing.track;
+      if (stageView(existing.stints).state === "done") {
+        track = null;
+        reason = "dasturni yakunlagan";
+      }
+    } else if (!scopes.some((x) => x.track === "primary")) track = "primary";
+    else if (!scopes.some((x) => x.track === "additional")) track = "additional";
+    else {
+      track = null;
+      reason = "ikkala yo‘nalish band";
+    }
+    return { s, track, reason, hasStints: Boolean(existing && existing.stints.length) };
+  });
+  const blocked = plan.filter((p) => !p.track);
+  const targets = plan.filter((p) => p.track);
+  const extras = targets.filter((p) => p.track === "additional" && !scopesOf(p.s.id).some((x) => x.program.id === programId));
   const today = todayISO();
+
+  function pickProgram(id: string) {
+    setProgramId(id);
+    setBookId("");
+  }
 
   function pickBook(id: string) {
     setBookId(id);
@@ -49,8 +98,12 @@ export function SetStageDialog({ open, students, onClose }: { open: boolean; stu
     if (!bookId || !isLevel(level)) return;
     setBusy(true);
     const dates: Record<string, string> = {};
-    for (const s of targets) if (own[s.id] && own[s.id] !== started) dates[s.id] = own[s.id];
-    const ok = await setStage(targets.map((s) => s.id), bookId, level, started, dates);
+    for (const t of targets) if (own[t.s.id] && own[t.s.id] !== started) dates[t.s.id] = own[t.s.id];
+    let ok = true;
+    for (const track of ["primary", "additional"] as const) {
+      const ids = targets.filter((t) => t.track === track).map((t) => t.s.id);
+      if (ok && ids.length) ok = await setStage(ids, bookId, level, started, dates, track);
+    }
     setBusy(false);
     if (ok) onClose(true);
   }
@@ -60,21 +113,31 @@ export function SetStageDialog({ open, students, onClose }: { open: boolean; stu
   return (
     <FormDialog
       open={open}
-      title={targets.length === 1 ? `${targets[0].name}: bosqichni belgilash` : `${targets.length} ta o'quvchiga bosqich belgilash`}
+      title={targets.length === 1 ? `${targets[0].s.name}: bosqichni belgilash` : `${targets.length || students.length} ta o'quvchiga bosqich belgilash`}
       submitLabel="Saqlash"
-      canSubmit={Boolean(bookId && level && started && targets.length)}
+      canSubmit={Boolean(programId && bookId && level && started && targets.length)}
       busy={busy}
       onSubmit={() => void save()}
       onCancel={() => onClose(false)}
     >
-      {ordered.length === 0 && <p className="hint">Avval “O‘quv dasturi” bo‘limida kitoblarni yarating.</p>}
+      <label className="field">
+        <span className="field__label">O‘quv dasturi</span>
+        <select className="select" value={programId} disabled={lockProgram} onChange={(e) => pickProgram(e.target.value)}>
+          {offered.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {ordered.length === 0 && <p className="hint">Bu dasturda faol kitob yo‘q. Avval “O‘quv dasturi” bo‘limida kitob qo‘shing.</p>}
       <label className="field">
         <span className="field__label">Hozirgi kitob</span>
         <select className="select" value={bookId} onChange={(e) => pickBook(e.target.value)}>
           <option value="">Kitobni tanlang</option>
-          {ordered.map((b) => (
+          {ordered.map((b, i) => (
             <option key={b.id} value={b.id}>
-              {b.position}. {b.title}
+              {i + 1}. {b.title}
             </option>
           ))}
         </select>
@@ -101,7 +164,7 @@ export function SetStageDialog({ open, students, onClose }: { open: boolean; stu
         <details className="own-dates">
           <summary>Har bir o‘quvchining haqiqiy boshlanish sanasi (ixtiyoriy)</summary>
           <div className="stack" style={{ gap: 6, marginTop: 8 }}>
-            {targets.map((s) => (
+            {targets.map(({ s }) => (
               <label key={s.id} className="own-dates__row">
                 <span>{s.name}</span>
                 <input
@@ -118,12 +181,17 @@ export function SetStageDialog({ open, students, onClose }: { open: boolean; stu
         </details>
       )}
 
-      {students.some((s) => (stintsByStudent.get(s.id) ?? []).length > 0) && targets.length > 0 && (
+      {extras.length > 0 && (
+        <p className="hint">
+          Qo‘shimcha yo‘nalish sifatida biriktiriladi: {extras.map((t) => t.s.name).join(", ")}. Asosiy dastur va level o‘zgarmaydi.
+        </p>
+      )}
+      {plan.some((p) => p.hasStints) && targets.length > 0 && (
         <p className="hint">Faol kitobi bor o‘quvchilarda joriy davr tuzatiladi; tugatilgan tarix o‘zgarmaydi.</p>
       )}
       {blocked.length > 0 && (
         <p className="hint" style={{ color: "var(--warn)" }}>
-          Dasturni yakunlaganlar o‘tkazib yuboriladi: {blocked.map((s) => s.name).join(", ")}.
+          O‘tkazib yuboriladi: {blocked.map((b) => `${b.s.name} (${b.reason})`).join(", ")}.
         </p>
       )}
     </FormDialog>
@@ -143,8 +211,8 @@ export function FinishBookDialog({
   onClose: () => void;
 }) {
   const { groups } = useData();
-  const { books, bookById, finishBook, transferStudent } = useStages();
-  const ordered = useMemo(() => sortBooks(books.filter((b) => b.active)), [books]);
+  const { booksOf, bookById, programById, finishBook, transferStudent } = useStages();
+  const ordered = useMemo(() => sortBooks(booksOf(stint?.program_id ?? "").filter(isSelectable)), [booksOf, stint]);
   const current = stint ? bookById.get(stint.book_id) : null;
   const today = todayISO();
 
@@ -211,7 +279,7 @@ export function FinishBookDialog({
       onCancel={onClose}
     >
       <div className="callout" style={{ background: "var(--brand-soft)", color: "var(--brand)", marginBottom: 0 }}>
-        Tugatilgan kitob: {current ? `${current.position}. ${current.title}` : "—"}
+        {stint ? (programById.get(stint.program_id)?.name ?? "") : ""} · Tugatilgan kitob: {current ? current.title : "—"}
       </div>
       <div className="seg seg--wrap" role="group" aria-label="Natija">
         {OUTCOMES.map((o) => (
@@ -238,9 +306,9 @@ export function FinishBookDialog({
             <span className="field__label">Yangi kitob</span>
             <select className="select" value={nextBook} onChange={(e) => pickNext(e.target.value)}>
               <option value="">Kitobni tanlang</option>
-              {ordered.map((b) => (
+              {ordered.map((b, i) => (
                 <option key={b.id} value={b.id}>
-                  {b.position}. {b.title}
+                  {i + 1}. {b.title}
                 </option>
               ))}
             </select>

@@ -6,6 +6,10 @@ import {
   forecastBook,
   forecastProgram,
   isReadyForNext,
+  isSaturday,
+  lessonsForProgress,
+  saturdayModeFor,
+  type SaturdayPlan,
   NO_DATA,
   nextLevel,
   stageView,
@@ -16,12 +20,14 @@ import {
 
 const book = (position: number, over: Partial<Book> = {}): Book => ({
   id: `b${position}`,
+  program_id: "p1",
   position,
   title: `${position}-kitob`,
   level: null,
   avg_weeks: null,
   planned_lessons: null,
   active: true,
+  archived_at: null,
   ...over,
 });
 
@@ -29,6 +35,7 @@ const stint = (over: Partial<BookStint>): BookStint => ({
   id: "h1",
   student_id: "s1",
   book_id: "b3",
+  program_id: "p1",
   group_id: "g1",
   level: "Elementary",
   started_on: "2026-09-01",
@@ -217,5 +224,54 @@ describe("buildOutlook", () => {
   it("due book says the planned time is ending, not a negative number", () => {
     const t = buildOutlook({ stage: "active", bookTitle: "A", attendanceRate: 90, book: { ...ok, remainingWeeks: 0, due: true }, program: null });
     expect(t).toContain("yakuniga yetmoqda");
+  });
+});
+
+const plan = (over: Partial<SaturdayPlan>): SaturdayPlan => ({
+  id: "x",
+  scope: "default",
+  program_id: null,
+  group_id: null,
+  student_id: null,
+  on_date: null,
+  mode: "mock",
+  note: null,
+  ...over,
+});
+const SAT = "2026-10-31"; // Saturday
+const SAT2 = "2026-11-07"; // next Saturday
+const ctx = { studentId: "s1", groupId: "g1", programId: "p1" };
+
+describe("Saturday plans", () => {
+  it("2026-10-31 is a Saturday, weekdays are not", () => {
+    expect(isSaturday(SAT)).toBe(true);
+    expect(isSaturday("2026-10-30")).toBe(false);
+  });
+
+  it("nothing configured = null (unchanged behaviour); never hard-coded per level", () => {
+    expect(saturdayModeFor([], { ...ctx, date: SAT })).toBeNull();
+  });
+
+  it("precedence: student > group > program > default; exact date beats standing", () => {
+    const plans = [
+      plan({ id: "d", scope: "default", mode: "lesson" }),
+      plan({ id: "p", scope: "program", program_id: "p1", mode: "mini_test" }),
+      plan({ id: "g", scope: "group", group_id: "g1", mode: "mock" }),
+      plan({ id: "s", scope: "student", student_id: "s1", mode: "none" }),
+      plan({ id: "dated", scope: "group", group_id: "g1", on_date: SAT2, mode: "lesson" }),
+    ];
+    expect(saturdayModeFor(plans, { ...ctx, date: SAT })).toBe("none");
+    expect(saturdayModeFor(plans.filter((p) => p.id !== "s"), { ...ctx, date: SAT })).toBe("mock");
+    expect(saturdayModeFor(plans.filter((p) => p.id === "p" || p.id === "d"), { ...ctx, date: SAT })).toBe("mini_test");
+    expect(saturdayModeFor(plans.filter((p) => p.id === "d"), { ...ctx, date: SAT })).toBe("lesson");
+    expect(saturdayModeFor(plans.filter((p) => p.id !== "s"), { ...ctx, date: SAT2 })).toBe("lesson");
+    expect(saturdayModeFor(plans, { ...ctx, date: "2026-10-30" })).toBeNull();
+  });
+
+  it("a mock Saturday never counts as a book lesson", () => {
+    const lessons = [{ lesson_date: "2026-10-30" }, { lesson_date: SAT }, { lesson_date: SAT2 }];
+    const plans = [plan({ scope: "group", group_id: "g1", mode: "mock" }), plan({ id: "y", scope: "group", group_id: "g1", on_date: SAT2, mode: "lesson" })];
+    expect(lessonsForProgress(lessons, plans, ctx).map((l) => l.lesson_date)).toEqual(["2026-10-30", SAT2]);
+    expect(lessonsForProgress(lessons, [], ctx)).toHaveLength(3);
   });
 });

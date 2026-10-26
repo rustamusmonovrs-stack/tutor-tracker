@@ -9,7 +9,7 @@ import { useData } from "@/lib/data";
 import { addDays, formatDate, todayISO } from "@/lib/dates";
 import { formatPct, totalsFor } from "@/lib/mock";
 import { useMockStore } from "@/lib/mockData";
-import { buildOutlook, durationText, NO_DATA, sortBooks, summarizeStudent, weeksText, approxMonth, type Book } from "@/lib/stages";
+import { buildOutlook, durationText, isSelectable, lessonsForProgress, NO_DATA, sortBooks, summarizeStudent, weeksText, approxMonth, type Book } from "@/lib/stages";
 import { useStages } from "@/lib/stagesData";
 
 export default function ParentReportPage() {
@@ -22,16 +22,20 @@ export default function ParentReportPage() {
   const student = students.find((s) => s.id === id);
   const group = groups.find((g) => g.id === student?.group_id);
   const lessons = useMemo(() => lessonsByStudent.get(id) ?? [], [lessonsByStudent, id]);
+  // The report follows the student's PRIMARY program; an additional track is listed separately.
+  const scopes = stages.scopesOf(id);
+  const primary = scopes.find((x) => x.track === "primary") ?? null;
+  const extra = scopes.find((x) => x.track === "additional") ?? null;
   const sum = useMemo(
     () =>
       summarizeStudent({
-        stints: stages.stintsByStudent.get(id) ?? [],
+        stints: primary?.stints ?? [],
         progress: stages.progressByStudent.get(id) ?? null,
-        books: stages.books,
-        lessons,
+        books: primary?.books ?? [],
+        lessons: lessonsForProgress(lessons, stages.plans, { studentId: id, groupId: student?.group_id ?? null, programId: primary?.program.id ?? null }),
         today,
       }),
-    [stages.stintsByStudent, stages.progressByStudent, stages.books, lessons, id, today],
+    [primary, stages.progressByStudent, stages.plans, lessons, id, student?.group_id, today],
   );
 
   // Only THIS student's rows are read below; nothing about other students reaches the page.
@@ -72,7 +76,7 @@ export default function ParentReportPage() {
 
   const { view, book } = sum;
   const progress = stages.progressByStudent.get(id) ?? null;
-  const ordered = sortBooks(stages.books);
+  const ordered = sortBooks((primary?.books ?? []).filter(isSelectable));
   const completed = view.completedBookIds.map((b) => stages.bookById.get(b)).filter((b): b is Book => Boolean(b));
   const last30 = lessons.filter((l) => l.lesson_date >= addDays(today, -29));
   const present30 = last30.filter((l) => l.attendance === "present").length;
@@ -104,8 +108,8 @@ export default function ParentReportPage() {
           <div className="report__brand">
             <span className="nav__mark" aria-hidden>A</span>
             <div>
-              <strong>ARK Education</strong>
-              <small>Ota-onalar hisoboti</small>
+              <strong>Ark Progress</strong>
+              <small>ARK Education · Ota-onalar hisoboti</small>
             </div>
           </div>
           <time className="report__date" dateTime={today}>{formatDate(today)}</time>
@@ -120,14 +124,23 @@ export default function ParentReportPage() {
               <dt>Hozirgi kitob</dt>
               <dd>{view.state === "done" ? "Dastur yakunlangan" : book ? book.title : "Belgilanmagan"}</dd>
             </div>
+            {extra && (
+              <div>
+                <dt>Qo‘shimcha yo‘nalish</dt>
+                <dd>
+                  {extra.program.name}
+                  {extra.stints.find((x) => !x.finished_on) ? ` — ${stages.bookById.get(extra.stints.find((x) => !x.finished_on)!.book_id)?.title ?? ""}` : ""}
+                </dd>
+              </div>
+            )}
           </dl>
         </section>
 
         <section className="report__sec">
-          <h2>{ordered.length || 9} kitoblik dastur</h2>
+          <h2>{primary ? `${primary.program.name}: ${ordered.length} kitoblik dastur` : "O‘quv dasturi"}</h2>
           {ordered.length > 0 ? (
             <>
-              <BookSegments books={stages.books} completed={view.completedBookIds} activeId={view.state === "active" ? (book?.id ?? null) : null} />
+              <BookSegments books={ordered} completed={view.completedBookIds} activeId={view.state === "active" ? (book?.id ?? null) : null} />
               <p className="report__legend">
                 <span><i className="dot dot--done" /> Tugatilgan</span>
                 <span><i className="dot dot--now" /> Hozir o‘qilmoqda</span>

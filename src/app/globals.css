@@ -1,4 +1,4 @@
-/* Jurnal — Ark Education design system
+/* Ark Progress — ARK Education design system
    Refined light UI: soft neutral canvas, white surfaces, deep-navy text, one restrained blue.
    Density follows Linear (compact rows, 14px base); data views follow HubSpot (tables, filters);
    stat cards follow Pipedrive. Colours are semantic: ok / warn / bad / neutral. */
@@ -445,6 +445,14 @@ svg {
 textarea.input:focus-visible {
   border-color: var(--brand);
   box-shadow: var(--focus);
+}
+
+@media (pointer: coarse) {
+  .input,
+  .select,
+  textarea.input {
+    font-size: 16px;
+  }
 }
 
 textarea.input {
@@ -1050,6 +1058,8 @@ a.row:hover { background: var(--surface-2); }
   justify-content: space-between;
   gap: var(--s2);
   padding: 8px var(--s3) 8px var(--s2);
+  /* same height in view and rename mode (input row = control + padding), so nothing below shifts */
+  min-height: calc(var(--control-h) + 16px);
 }
 
 .group-toggle {
