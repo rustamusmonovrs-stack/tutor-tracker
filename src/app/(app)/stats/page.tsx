@@ -6,6 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { HBars, Legend, StackedBars } from "@/components/charts";
 import { Kpi } from "@/components/ui";
 import { useData } from "@/lib/data";
+import { useHomework } from "@/lib/homeworkData";
 import { addDays, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { buildGroupStandings, buildStandings, scoreLessons, summarize, type ScoredLesson } from "@/lib/scoring";
 
@@ -13,6 +14,7 @@ type Days = 7 | 30 | 90;
 
 export default function StatsPage() {
   const { activeGroups, activeStudents, lessons, lessonsByStudent } = useData();
+  const { coinEvents } = useHomework();
   const [days, setDays] = useState<Days>(30);
   const [groupId, setGroupId] = useState("all");
 
@@ -46,6 +48,9 @@ export default function StatsPage() {
   const todayUnmarked = pool.length - todays.filter((l) => l.attendance).length;
 
   const weekFrom = weekStart(today);
+  const taskCoin = (a: string, b: string) => coinEvents.filter((e) => ids.has(e.student_id) && e.date >= a && e.date <= b).reduce((t, e) => t + e.coins, 0);
+  const taskPeriod = taskCoin(from, today);
+  const taskWeek = taskCoin(weekFrom, addDays(weekFrom, 6));
   const weekCoins = scoredAll
     .filter((s) => s.lesson.lesson_date >= weekFrom && s.lesson.lesson_date <= addDays(weekFrom, 6))
     .reduce((t, s) => t + s.coins, 0);
@@ -75,13 +80,13 @@ export default function StatsPage() {
   }, [inPeriod, from, today]);
 
   const groupRows = useMemo(() => {
-    const standings = buildStandings(activeStudents, lessons, { from, to: today });
+    const standings = buildStandings(activeStudents, lessons, { from, to: today }, coinEvents);
     return buildGroupStandings(activeGroups, standings);
-  }, [activeGroups, activeStudents, lessons, from, today]);
+  }, [activeGroups, activeStudents, lessons, from, today, coinEvents]);
 
   const top = useMemo(
-    () => buildStandings(pool, lessons, { from, to: today }).filter((s) => s.coins > 0).slice(0, 5),
-    [pool, lessons, from, today],
+    () => buildStandings(pool, lessons, { from, to: today }, coinEvents).filter((s) => s.coins > 0).slice(0, 5),
+    [pool, lessons, from, today, coinEvents],
   );
 
   const attSeries = [
@@ -158,7 +163,7 @@ export default function StatsPage() {
           unit={sum.graded ? "%" : undefined}
           note={sum.graded ? `${sum.full} / ${sum.graded} baholangan` : "Baholangan vazifa yo'q"}
         />
-        <Kpi label="Hafta tangalari" value={weekCoins} note={`Davrda jami: ${sum.coins}`} />
+        <Kpi label="Hafta tangalari" value={weekCoins + taskWeek} note={`Davrda jami: ${sum.coins + taskPeriod}`} />
       </div>
 
       {!hasData ? (

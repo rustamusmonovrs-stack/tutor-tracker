@@ -18,6 +18,7 @@ import {
 } from "@/components/icons";
 import { ConfirmDialog } from "@/components/ui";
 import { useData } from "@/lib/data";
+import { useHomework } from "@/lib/homeworkData";
 import { todayISO } from "@/lib/dates";
 import { LEVELS, isLevel, isSelectable, sortBooks, type Level } from "@/lib/stages";
 import { useStages } from "@/lib/stagesData";
@@ -30,6 +31,7 @@ type Sort = "name" | "coins";
 
 export default function StudentsPage() {
   const { groups, students, topicsByStudent, lessonsByStudent, addGroup } = useData();
+  const { coinEvents } = useHomework();
   const router = useRouter();
   const [newGroup, setNewGroup] = useState("");
   const [addingGroup, setAddingGroup] = useState(false);
@@ -47,8 +49,9 @@ export default function StudentsPage() {
     for (const s of students) {
       map.set(s.id, scoreLessons(lessonsByStudent.get(s.id) ?? []).reduce((sum, x) => sum + x.coins, 0));
     }
+    for (const e of coinEvents) map.set(e.student_id, (map.get(e.student_id) ?? 0) + e.coins);
     return map;
-  }, [students, lessonsByStudent]);
+  }, [students, lessonsByStudent, coinEvents]);
 
   async function submitGroup(e: FormEvent) {
     e.preventDefault();

@@ -6,6 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { IconCoin } from "@/components/icons";
 import { STUCK_AFTER } from "@/lib/config";
 import { useData } from "@/lib/data";
+import { useHomework } from "@/lib/homeworkData";
 import { addDays, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic, repeatCount } from "@/lib/progress";
 import { buildGroupStandings, buildStandings, inRange, type DateRange, type Standing } from "@/lib/scoring";
@@ -26,6 +27,7 @@ function initialsOf(name: string): string {
 
 export default function LeaderboardPage() {
   const { activeGroups, activeStudents, lessons, lessonsByStudent, topicsByStudent } = useData();
+  const { coinEvents } = useHomework();
   const [period, setPeriod] = useState<Period>("week");
   const [scope, setScope] = useState<Scope>("all");
 
@@ -43,8 +45,8 @@ export default function LeaderboardPage() {
 
   const standings = useMemo(() => {
     const pool = scopeGroup ? activeStudents.filter((s) => s.group_id === scopeGroup.id) : activeStudents;
-    return buildStandings(pool, lessons, range);
-  }, [activeStudents, lessons, range, scopeGroup]);
+    return buildStandings(pool, lessons, range, coinEvents);
+  }, [activeStudents, lessons, range, scopeGroup, coinEvents]);
 
   // Podium = everyone with a real rank 1-3 (ties share a rank and are never split between podium and list).
   const { top, rest, tiers } = useMemo(() => {
@@ -58,8 +60,8 @@ export default function LeaderboardPage() {
   }, [standings]);
 
   const groupStandings = useMemo(
-    () => buildGroupStandings(activeGroups, buildStandings(activeStudents, lessons, range)),
-    [activeGroups, activeStudents, lessons, range],
+    () => buildGroupStandings(activeGroups, buildStandings(activeStudents, lessons, range, coinEvents)),
+    [activeGroups, activeStudents, lessons, range, coinEvents],
   );
 
   // "No results" means no lesson has been marked in this period for the people shown.
@@ -70,11 +72,11 @@ export default function LeaderboardPage() {
 
   const lastWeekStar = useMemo(() => {
     const from = addDays(thisWeek, -7);
-    const top = buildStandings(activeStudents, lessons, { from, to: addDays(from, 6) });
+    const top = buildStandings(activeStudents, lessons, { from, to: addDays(from, 6) }, coinEvents);
     const best = top[0]?.coins ?? 0;
     if (best <= 0) return null;
     return { names: top.filter((s) => s.coins === best).map((s) => s.student.name), coins: best };
-  }, [activeStudents, lessons, thisWeek]);
+  }, [activeStudents, lessons, thisWeek, coinEvents]);
 
   const attention = useMemo(
     () =>

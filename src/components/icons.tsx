@@ -56,3 +56,5 @@ export const IconCoin = (p: SVGProps<SVGSVGElement>) => (
     />
   </svg>
 );
+
+export { ClipboardList as IconWatch } from "lucide-react";

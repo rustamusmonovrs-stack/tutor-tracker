@@ -3,22 +3,26 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { IconAward, IconMock, IconPeople, IconRank, IconStages, IconStats, IconToday } from "@/components/icons";
+import { IconAward, IconMock, IconPeople, IconRank, IconStages, IconStats, IconToday, IconWatch } from "@/components/icons";
 import { useData } from "@/lib/data";
+import { useHomework } from "@/lib/homeworkData";
 
 const LINKS = [
   { href: "/", label: "Bugun", icon: IconToday },
+  { href: "/watch", label: "Nazorat ro'yxati", short: "Nazorat", icon: IconWatch },
   { href: "/mock", label: "Mock", icon: IconMock },
   { href: "/leaderboard", label: "Reyting", icon: IconRank },
-  { href: "/students", label: "O'quvchilar", icon: IconPeople },
-  { href: "/stages", label: "Bosqichlar", icon: IconStages },
-  { href: "/stats", label: "Statistika", icon: IconStats },
+  { href: "/students", label: "O'quvchilar", short: "O'quvchi", icon: IconPeople },
+  { href: "/stages", label: "Bosqichlar", short: "Bosqich", icon: IconStages },
+  { href: "/stats", label: "Statistika", short: "Stat.", icon: IconStats },
   { href: "/results", label: "Bizning natijalar", short: "Natijalar", icon: IconAward },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { status, error, reload, toast, dismissToast } = useData();
+  const { status, error, reload, toast, dismissToast, activeStudents } = useData();
+  const { cases } = useHomework();
+  const watchCount = cases.filter((c) => c.status === "active" && activeStudents.some((s) => s.id === c.student_id)).length;
 
   return (
     <div className="shell">
@@ -44,6 +48,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </>
               ) : (
                 label
+              )}
+              {href === "/watch" && watchCount > 0 && (
+                <span className="nav__badge" aria-label={`${watchCount} ta nazoratdagi o'quvchi`}>
+                  {watchCount}
+                </span>
               )}
             </Link>
           );
