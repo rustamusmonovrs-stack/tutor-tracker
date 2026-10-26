@@ -41,7 +41,7 @@ export function CurriculumManager() {
   return (
     <>
       <div className="curr-head">
-        <div className="seg" role="tablist" aria-label="O'quv dasturi">
+        <div className="seg seg--wrap" role="tablist" aria-label="O'quv dasturi">
           {programs.map((p) => (
             <button key={p.id} className="seg__btn" role="tab" aria-selected={p.id === programId} onClick={() => setProgramId(p.id)}>
               {p.name}
