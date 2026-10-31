@@ -9,17 +9,18 @@ import { Kpi } from "@/components/ui";
 import { FormDialog } from "@/components/ui";
 import { formatShort } from "@/lib/dates";
 import { useSubjectScope } from "@/lib/subjects/data";
-import { nameKey, personKey, personProgress, type Person } from "@/lib/subjects/people";
+import { nameKey, personProgress, type Person } from "@/lib/subjects/people";
 import { SUBJECTS, type SubjectRecord } from "@/lib/subjects/types";
 import { PctBars } from "./PctBars";
-import { StudentNameField, useRoster } from "./roster";
+import { StudentNameField, useRoster, type Choice } from "./roster";
 import { HW_LABEL, SubjectSaveChip, fmtPct, useStoredGroup } from "./shared";
 
 const ATT = { present: "Keldi", absent: "Kelmadi" } as const;
 
 export function SubjectStudents() {
   const { subject, groups, activeGroups, lessons, records } = useSubjectScope();
-  const { people, enroll } = useRoster();
+  const { people, enroll, ready } = useRoster();
+  const [choice, setChoice] = useState<Choice>(null);
   const router = useRouter();
   const params = useSearchParams();
   const [query, setQuery] = useState("");
@@ -75,11 +76,12 @@ export function SubjectStudents() {
     if (!newGroup) return;
     setBusy(true);
     setFormError(null);
-    const r = await enroll(newGroup.id, newName);
+    const r = await enroll(newGroup.id, newName, choice);
     setBusy(false);
     if (r.ok) {
       setCreating(false);
       setNewName("");
+      setChoice(null);
     } else if (r.error) setFormError(r.error);
   }
 
@@ -163,9 +165,9 @@ export function SubjectStudents() {
         title="Yangi o'quvchi"
         submitLabel="Qo'shish"
         busy={busy}
-        canSubmit={newName.trim().length > 0 && newGroup !== null}
+        canSubmit={newGroup !== null && ready(newName, choice)}
         onSubmit={() => void create()}
-        onCancel={() => { setCreating(false); setNewName(""); setFormError(null); }}
+        onCancel={() => { setCreating(false); setNewName(""); setChoice(null); setFormError(null); }}
       >
         <label className="field">
           <span className="field__label">Guruh</span>
@@ -173,18 +175,17 @@ export function SubjectStudents() {
             {activeGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
         </label>
-        <StudentNameField label="Ism familiya" value={newName} groupId={newGroup?.id ?? null} autoFocus onChange={(v) => { setNewName(v); setFormError(null); }} />
+        <StudentNameField label="Ism familiya" value={newName} groupId={newGroup?.id ?? null} choice={choice} onChoice={setChoice} autoFocus onChange={(v) => { setNewName(v); setFormError(null); }} />
         {formError && <span className="sj-err" role="alert">{formError}</span>}
       </FormDialog>
 
-      <PersonDrawer person={open} progress={open ? progressOf(open) : null} onClose={() => select(null)} onRenamed={select} />
+      <PersonDrawer person={open} progress={open ? progressOf(open) : null} onClose={() => select(null)} />
     </>
   );
 }
 
-function PersonDrawer({ person, progress, onClose, onRenamed }: { person: Person | null; progress: ReturnType<typeof personProgress> | null; onClose: () => void; onRenamed: (key: string) => void }) {
+function PersonDrawer({ person, progress, onClose }: { person: Person | null; progress: ReturnType<typeof personProgress> | null; onClose: () => void }) {
   const { subject, api, groups, activeGroups } = useSubjectScope();
-  const { people } = useRoster();
   const ref = useRef<HTMLDialogElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -214,21 +215,17 @@ function PersonDrawer({ person, progress, onClose, onRenamed }: { person: Person
     if (!person || editing === null) return;
     const clean = editing.trim().replace(/\s+/g, " ");
     if (!clean) return;
-    const clash = people.find((p) => p.key !== person.key && !person.englishStudentId && nameKey(p.name) === nameKey(clean));
-    if (clash) return setEditError("Bu ism bilan boshqa o'quvchi bor");
     const ok = await api.renameStudents(person.memberships.map((m) => m.id), clean);
     if (ok) {
       setEditing(null);
       setEditError(null);
-      // the name is part of the identity key (unless linked to English), so keep this profile open under the new key
-      onRenamed(person.englishStudentId ? person.key : personKey({ name: clean, english_student_id: null }));
     }
   }
 
   async function join() {
     if (!person || !addTo) return;
     const old = person.memberships.find((m) => m.group_id === addTo && m.archived_at);
-    const ok = old ? await api.setStudentArchived(old.id, false) : Boolean(await api.addStudent(subject, addTo, person.name, person.englishStudentId));
+    const ok = old ? await api.setStudentArchived(old.id, false) : Boolean(await api.addStudent(subject, addTo, person.name, person.englishStudentId, person.key));
     if (ok) setAddTo("");
   }
 

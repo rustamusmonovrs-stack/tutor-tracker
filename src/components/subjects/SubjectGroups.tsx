@@ -9,7 +9,7 @@ import { formatShort } from "@/lib/dates";
 import { useSubjectScope } from "@/lib/subjects/data";
 import { nameKey, personKey } from "@/lib/subjects/people";
 import { SUBJECTS, type SubjectGroup } from "@/lib/subjects/types";
-import { StudentNameField, useRoster } from "./roster";
+import { StudentNameField, useRoster, type Choice } from "./roster";
 import { SubjectSaveChip, rememberGroup } from "./shared";
 
 export function SubjectGroups() {
@@ -157,7 +157,8 @@ function GroupCard({ group, count, last, open, onToggle }: { group: SubjectGroup
 
 function GroupPanel({ group }: { group: SubjectGroup }) {
   const { subject, api, students } = useSubjectScope();
-  const { enroll } = useRoster();
+  const { enroll, ready } = useRoster();
+  const [choice, setChoice] = useState<Choice>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
@@ -174,9 +175,12 @@ function GroupPanel({ group }: { group: SubjectGroup }) {
   async function add() {
     setAdding(true);
     setFormError(null);
-    const r = await enroll(group.id, name);
+    const r = await enroll(group.id, name, choice);
     setAdding(false);
-    if (r.ok) setName("");
+    if (r.ok) {
+      setName("");
+      setChoice(null);
+    }
     else if (r.error) setFormError(r.error);
   }
 
@@ -216,10 +220,10 @@ function GroupPanel({ group }: { group: SubjectGroup }) {
           }}
         >
           <div style={{ flex: 1, minWidth: 220 }}>
-            <StudentNameField label="O'quvchi qo'shish" value={name} groupId={group.id} onChange={(v) => { setName(v); setFormError(null); }} />
+            <StudentNameField label="O'quvchi qo'shish" value={name} groupId={group.id} choice={choice} onChoice={setChoice} onChange={(v) => { setName(v); setFormError(null); }} />
             {formError && <span className="sj-err" role="alert">{formError}</span>}
           </div>
-          <button className="btn btn--primary" type="submit" disabled={adding || !name.trim()}>
+          <button className="btn btn--primary" type="submit" disabled={adding || !ready(name, choice)}>
             <IconPlus aria-hidden /> Qo&apos;shish
           </button>
         </form>

@@ -4,7 +4,7 @@ import type { SubjectLesson, SubjectRecord, SubjectStudent } from "./types";
 
 const G = { id: "g1", name: "Matematika 1" };
 const stu = (id: string, name: string, over: Partial<SubjectStudent> = {}): SubjectStudent => ({
-  id, subject: "math", group_id: "g1", name, english_student_id: null, archived_at: null, created_at: "", ...over,
+  id, person_id: id, subject: "math", group_id: "g1", name, english_student_id: null, archived_at: null, created_at: "", ...over,
 });
 const les = (id: string, date: string, over: Partial<SubjectLesson> = {}): SubjectLesson => ({
   id, subject: "math", group_id: "g1", lesson_date: date, topic: null, homework: null,

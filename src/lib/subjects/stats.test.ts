@@ -3,7 +3,7 @@ import { buildReport } from "./report";
 import { studentTestHistory, summarize } from "./stats";
 import type { SubjectLesson, SubjectRecord, SubjectStudent } from "./types";
 
-const stu = (id: string, g: string): SubjectStudent => ({ id, subject: "math", group_id: g, name: id, english_student_id: null, archived_at: null, created_at: "" });
+const stu = (id: string, g: string): SubjectStudent => ({ id, person_id: id, subject: "math", group_id: g, name: id, english_student_id: null, archived_at: null, created_at: "" });
 const les = (id: string, g: string, date: string, max: number | null): SubjectLesson => ({ id, subject: "math", group_id: g, lesson_date: date, topic: null, homework: null, has_test: max !== null, test_title: null, test_max: max, updated_at: "" });
 const rec = (l: string, s: string, g: string, o: Partial<SubjectRecord>): SubjectRecord => ({ id: l + s, subject: "math", group_id: g, lesson_id: l, student_id: s, attendance: null, homework: null, score: null, updated_at: "", ...o });
 const mk = (g: string, students: SubjectStudent[], lessons: SubjectLesson[], records: SubjectRecord[]) =>

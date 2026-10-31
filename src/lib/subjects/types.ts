@@ -25,6 +25,8 @@ export interface SubjectStudent {
   id: string;
   subject: SubjectKey;
   group_id: string;
+  /** Permanent identity of the person (shared by all memberships of one person in this subject). */
+  person_id: string;
   name: string;
   english_student_id: string | null;
   archived_at: string | null;

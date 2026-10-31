@@ -2324,3 +2324,7 @@ dialog.sj-drawer { width: min(560px, 100vw); }
 .sj-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .sj-drawer .drawer__panel { grid-template-columns: minmax(0, 1fr); }
 .sj-drawer .sj-bars li { grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) 52px; }
+.sj-choice { display: grid; gap: 6px; margin: 6px 0 0; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.sj-choice legend { padding: 0 4px; }
+.sj-choice__opt { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-sm); cursor: pointer; }
+.sj-choice__opt input { margin-top: 3px; }

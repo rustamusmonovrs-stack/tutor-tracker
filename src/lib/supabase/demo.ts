@@ -208,6 +208,12 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
         if (this.op === "update" && it.name !== undefined && rows.some((r) => !r.archived_at && !this.matches(r) && norm(r.name) === norm(it.name) && rows.filter((x) => this.matches(x)).some((x) => x.subject === r.subject))) return 'duplicate key value violates unique constraint "subject_groups_active_name_uq"';
       }
     }
+    // 20261031b: one ACTIVE membership per (group, person); person_id is assigned by the database when omitted
+    if (this.table === "subject_students" && this.op === "insert") {
+      for (const it of items) {
+        if (it.person_id && rows.some((r) => !r.archived_at && r.group_id === it.group_id && r.person_id === it.person_id)) return 'duplicate key value violates unique constraint "subject_students_group_person_uq"';
+      }
+    }
     if (this.table === "subject_lessons" && this.op === "update") {
       const patch = this.payload as Row;
       for (const lesson of rows.filter((r) => this.matches(r))) {
@@ -255,7 +261,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
       out = rows.filter((r) => this.matches(r)).slice(this.from, this.to === Infinity ? undefined : this.to + 1);
     } else if (this.op === "insert") {
       const items = Array.isArray(this.payload) ? this.payload : [this.payload as Row];
-      out = items.map((i) => ({ id: uuid(), archived_at: null, created_at: new Date().toISOString(), ...(this.table === "curriculum_books" ? { active: true, level: null, avg_weeks: null, planned_lessons: null, program_id: t.curriculum_programs.find((p) => p.key === "general")?.id } : {}), ...(this.table === "certificates" ? { status: "draft", private_path: null, redacted_path: null, public_path: null, consent_at: null, consent_note: null, sort_order: 0, published_at: null } : {}), ...(this.table === "saturday_plans" ? { program_id: null, group_id: null, student_id: null, on_date: null, note: null } : {}), ...i }));
+      out = items.map((i) => ({ id: uuid(), archived_at: null, ...(this.table === "subject_students" ? { person_id: uuid() } : {}), created_at: new Date().toISOString(), ...(this.table === "curriculum_books" ? { active: true, level: null, avg_weeks: null, planned_lessons: null, program_id: t.curriculum_programs.find((p) => p.key === "general")?.id } : {}), ...(this.table === "certificates" ? { status: "draft", private_path: null, redacted_path: null, public_path: null, consent_at: null, consent_note: null, sort_order: 0, published_at: null } : {}), ...(this.table === "saturday_plans" ? { program_id: null, group_id: null, student_id: null, on_date: null, note: null } : {}), ...i }));
       rows.push(...out);
     } else if (this.op === "update") {
       out = rows.filter((r) => this.matches(r));

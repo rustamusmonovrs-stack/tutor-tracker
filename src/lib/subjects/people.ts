@@ -2,22 +2,20 @@ import { mean, pct } from "./report";
 import type { SubjectAttendance, SubjectGroup, SubjectHomework, SubjectLesson, SubjectRecord, SubjectStudent } from "./types";
 
 /**
- * A "person" is the same learner across several groups of ONE subject.
- * subject_students holds one row per group membership, so identity is derived:
- *  - the linked English student (english_student_id) when there is one, otherwise
- *  - the normalised name (case, spacing).
+ * A "person" is one learner of ONE subject, identified by the permanent person_id stored on every membership row
+ * (subject_students has one row per group membership; all rows of one person share the same person_id).
+ * Names are NOT identity: two different learners called "Ali Valiyev" are two people.
  * Nothing here writes to the database or touches English data.
  */
 
 export const nameKey = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
 
-export function personKey(s: Pick<SubjectStudent, "english_student_id" | "name">): string {
-  return s.english_student_id ? `e:${s.english_student_id}` : `n:${nameKey(s.name)}`;
-}
+export const personKey = (s: Pick<SubjectStudent, "person_id">): string => s.person_id;
 
 export interface Person {
   key: string;
   name: string;
+  /** Optional reference to an English student (read-only link). */
   englishStudentId: string | null;
   /** Every membership row (any group, archived or not). */
   memberships: SubjectStudent[];
@@ -28,38 +26,24 @@ export interface Person {
 export function buildPeople(students: SubjectStudent[], groups: SubjectGroup[]): Person[] {
   const groupActive = new Set(groups.filter((g) => !g.archived_at).map((g) => g.id));
   const map = new Map<string, Person>();
-  for (const s of [...students].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))) {
-    const key = personKey(s);
-    let p = map.get(key);
+  for (const s of [...students].sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))) {
+    let p = map.get(s.person_id);
     if (!p) {
-      p = { key, name: s.name, englishStudentId: s.english_student_id, memberships: [], active: [] };
-      map.set(key, p);
+      p = { key: s.person_id, name: s.name, englishStudentId: s.english_student_id, memberships: [], active: [] };
+      map.set(s.person_id, p);
     }
     p.memberships.push(s);
+    if (!p.englishStudentId && s.english_student_id) p.englishStudentId = s.english_student_id;
     if (!s.archived_at && groupActive.has(s.group_id)) p.active.push(s);
   }
-  for (const p of map.values()) {
-    const first = p.active[0] ?? p.memberships[0];
-    p.name = first.name;
-  }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "uz"));
+  for (const p of map.values()) p.name = (p.active[0] ?? p.memberships[0]).name;
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "uz") || (a.key < b.key ? -1 : 1));
 }
 
-/**
- * Which identity a typed/selected name resolves to. Re-uses an existing person of this subject
- * (same English link or same name) so a second "Ali Valiyev" is never created as a stranger.
- */
-export function identify(
-  name: string,
-  englishStudentId: string | null,
-  people: Person[],
-): { name: string; englishStudentId: string | null; existing: Person | null } {
-  const clean = name.trim().replace(/\s+/g, " ");
-  const existing =
-    (englishStudentId ? people.find((p) => p.englishStudentId === englishStudentId) : undefined) ??
-    people.find((p) => nameKey(p.name) === nameKey(clean));
-  if (existing) return { name: existing.name, englishStudentId: existing.englishStudentId ?? englishStudentId, existing };
-  return { name: clean, englishStudentId, existing: null };
+/** Existing people whose name matches what was typed. The caller must let the user choose: never auto-merge. */
+export function candidatesByName(name: string, people: Person[]): Person[] {
+  const k = nameKey(name);
+  return k ? people.filter((p) => nameKey(p.name) === k) : [];
 }
 
 export interface PersonHistoryEntry {

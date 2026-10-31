@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildPeople, identify, nameKey, personKey, personProgress } from "./people";
+import { buildPeople, candidatesByName, nameKey, personKey, personProgress } from "./people";
 import type { SubjectGroup, SubjectLesson, SubjectRecord, SubjectStudent } from "./types";
 
 const g = (id: string, name: string, archived = false): SubjectGroup => ({ id, subject: "math", name, archived_at: archived ? "2026-01-01" : null, created_at: "2026-01-01" });
 const st = (id: string, group_id: string, name: string, extra: Partial<SubjectStudent> = {}): SubjectStudent => ({
-  id, subject: "math", group_id, name, english_student_id: null, archived_at: null, created_at: `2026-01-0${id.length}`, ...extra,
+  id, person_id: id, subject: "math", group_id, name, english_student_id: null, archived_at: null, created_at: `2026-01-0${id.length}`, ...extra,
 });
 const lesson = (id: string, group_id: string, date: string, extra: Partial<SubjectLesson> = {}): SubjectLesson => ({
   id, subject: "math", group_id, lesson_date: date, topic: null, homework: null, has_test: false, test_title: null, test_max: null, updated_at: "", ...extra,
@@ -16,31 +16,40 @@ const rec = (lesson_id: string, student_id: string, group_id: string, extra: Par
 describe("people", () => {
   const groups = [g("g1", "Mat 1"), g("g2", "Mat 2"), g("g3", "Eski", true)];
 
-  it("normalises names and prefers the English link as identity", () => {
+  it("identity is the permanent person_id, never the name", () => {
     expect(nameKey("  Ali   VALIYEV ")).toBe("ali valiyev");
-    expect(personKey({ name: "Ali", english_student_id: "e1" })).toBe("e:e1");
-    expect(personKey({ name: "Ali", english_student_id: null })).toBe("n:ali");
+    expect(personKey({ person_id: "p1" })).toBe("p1");
   });
 
-  it("merges memberships of one person across groups, counted once", () => {
-    const people = buildPeople([st("a", "g1", "Ali Valiyev"), st("bb", "g2", "ali  valiyev"), st("ccc", "g1", "Vali")], groups);
-    expect(people.map((p) => p.name)).toEqual(["Ali Valiyev", "Vali"]);
-    expect(people[0].memberships).toHaveLength(2);
-    expect(people[0].active).toHaveLength(2);
+  it("two different people with the same name stay two people", () => {
+    const people = buildPeople([st("a", "g1", "Ali Valiyev", { person_id: "p1" }), st("bb", "g1", "Ali Valiyev", { person_id: "p2" })], groups);
+    expect(people).toHaveLength(2);
+    expect(people.map((p) => p.key).sort()).toEqual(["p1", "p2"]);
+  });
+
+  it("memberships of one person (same person_id) across groups are counted once, even if names differ", () => {
+    const people = buildPeople([st("a", "g1", "Ali Valiyev", { person_id: "p1" }), st("bb", "g2", "Ali V.", { person_id: "p1" }), st("ccc", "g1", "Vali", { person_id: "p3" })], groups);
+    expect(people).toHaveLength(2);
+    expect(people.find((p) => p.key === "p1")?.memberships).toHaveLength(2);
+    expect(people.find((p) => p.key === "p1")?.active).toHaveLength(2);
   });
 
   it("a membership in an archived group or archived row is not active", () => {
-    const people = buildPeople([st("a", "g3", "Ali"), st("bb", "g1", "Ali", { archived_at: "2026-02-01" })], groups);
+    const people = buildPeople([st("a", "g3", "Ali", { person_id: "p1" }), st("bb", "g1", "Ali", { person_id: "p1", archived_at: "2026-02-01" })], groups);
     expect(people).toHaveLength(1);
     expect(people[0].active).toHaveLength(0);
   });
 
-  it("identify re-uses an existing person instead of creating a stranger", () => {
-    const people = buildPeople([st("a", "g1", "Ali Valiyev", { english_student_id: "e1" })], groups);
-    expect(identify("ali valiyev", null, people).existing?.key).toBe("e:e1");
-    expect(identify("ali valiyev", null, people).englishStudentId).toBe("e1");
-    expect(identify("Yangi Bola", null, people).existing).toBeNull();
-    expect(identify("Boshqa", "e1", people).name).toBe("Ali Valiyev");
+  it("keeps the English link found on any membership", () => {
+    const people = buildPeople([st("a", "g1", "Ali", { person_id: "p1" }), st("bb", "g2", "Ali", { person_id: "p1", english_student_id: "e1" })], groups);
+    expect(people[0].englishStudentId).toBe("e1");
+  });
+
+  it("candidatesByName lists every same-name person so the caller must choose (no auto-merge)", () => {
+    const people = buildPeople([st("a", "g1", "Ali Valiyev", { person_id: "p1" }), st("bb", "g2", "ali  valiyev", { person_id: "p2" }), st("ccc", "g1", "Vali", { person_id: "p3" })], groups);
+    expect(candidatesByName("ALI valiyev", people).map((p) => p.key).sort()).toEqual(["p1", "p2"]);
+    expect(candidatesByName("Yangi Bola", people)).toEqual([]);
+    expect(candidatesByName("   ", people)).toEqual([]);
   });
 });
 

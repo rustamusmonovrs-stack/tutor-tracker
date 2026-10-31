@@ -16,7 +16,7 @@ import {
 type Status = "loading" | "ready" | "error";
 
 const GROUP_COLS = "id,subject,name,archived_at,created_at";
-const STUDENT_COLS = "id,subject,group_id,name,english_student_id,archived_at,created_at";
+const STUDENT_COLS = "id,subject,group_id,person_id,name,english_student_id,archived_at,created_at";
 const LESSON_COLS = "id,subject,group_id,lesson_date,topic,homework,has_test,test_title,test_max,updated_at";
 const RECORD_COLS = "id,subject,group_id,lesson_id,student_id,attendance,homework,score,updated_at";
 
@@ -45,7 +45,8 @@ interface SubjectApi {
   addGroup: (subject: SubjectKey, name: string) => Promise<SubjectGroup | null>;
   renameGroup: (id: string, name: string) => Promise<boolean>;
   setGroupArchived: (id: string, archived: boolean) => Promise<boolean>;
-  addStudent: (subject: SubjectKey, groupId: string, name: string, englishStudentId?: string | null) => Promise<SubjectStudent | null>;
+  /** personId: add ANOTHER membership of an existing person; omitted = a new person (the database assigns person_id). */
+  addStudent: (subject: SubjectKey, groupId: string, name: string, englishStudentId?: string | null, personId?: string | null) => Promise<SubjectStudent | null>;
   renameStudent: (id: string, name: string) => Promise<boolean>;
   /** Renames every membership row of one person in ONE statement, so a person can never end up half-renamed. */
   renameStudents: (ids: string[], name: string) => Promise<boolean>;
@@ -71,7 +72,8 @@ function messageOf(e: unknown): string {
 /** Friendly Uzbek text for the database rules we expect users to hit. */
 export function friendlyError(raw: string): string {
   if (/subject_groups_active_name_uq/.test(raw)) return "Bu nomdagi faol guruh allaqachon bor";
-  if (/subject_students_group_name_uq/.test(raw)) return "Bu o'quvchi guruhda allaqachon bor";
+  if (/subject_students_group_person_uq/.test(raw)) return "Bu o'quvchi guruhda allaqachon bor";
+  if (/yoki sizga tegishli emas/.test(raw)) return "Bu yozuv sizga tegishli emas";
   if (/relation "public\.subject_|Could not find the table|schema cache/.test(raw))
     return "Fan jadvallari bazada topilmadi (migratsiya qo'llanmagan)";
   return raw;
@@ -203,11 +205,11 @@ export function SubjectProvider({ children }: { children: ReactNode }) {
   // ---- students ----------------------------------------------------------
 
   const addStudent = useCallback<SubjectApi["addStudent"]>(
-    async (subject, groupId, name, englishStudentId) => {
+    async (subject, groupId, name, englishStudentId, personId) => {
       begin();
       const { data, error: err } = await getSupabase()
         .from("subject_students")
-        .insert({ subject, group_id: groupId, name: name.trim(), english_student_id: englishStudentId ?? null })
+        .insert({ subject, group_id: groupId, name: name.trim(), english_student_id: englishStudentId ?? null, ...(personId ? { person_id: personId } : {}) })
         .select(STUDENT_COLS)
         .single();
       end(!err);

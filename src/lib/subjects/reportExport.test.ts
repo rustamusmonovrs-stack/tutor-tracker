@@ -17,7 +17,7 @@ const fonts = {
 function dataset(nStudents: number, nLessons: number, subject: "math" | "history" = "math") {
   const names = ["Oʻtkir Gʻaniyev", "Dilnoza Abdurahmonova-Qodirova", "Shoxrux Toshpoʻlatov", "<script>alert(1)</script> & “Q”"];
   const students: SubjectStudent[] = Array.from({ length: nStudents }, (_, i) => ({
-    id: `s${i}`, subject, group_id: "g", name: i < names.length ? names[i] : `O‘quvchi ${i + 1} Familiyaev`, english_student_id: null, archived_at: null, created_at: "",
+    id: `s${i}`, person_id: `s${i}`, subject, group_id: "g", name: i < names.length ? names[i] : `O‘quvchi ${i + 1} Familiyaev`, english_student_id: null, archived_at: null, created_at: "",
   }));
   const lessons: SubjectLesson[] = Array.from({ length: nLessons }, (_, i) => ({
     id: `l${i}`, subject, group_id: "g", lesson_date: `2026-10-${String(i + 1).padStart(2, "0")}`,
