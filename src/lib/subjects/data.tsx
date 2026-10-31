@@ -47,6 +47,8 @@ interface SubjectApi {
   setGroupArchived: (id: string, archived: boolean) => Promise<boolean>;
   addStudent: (subject: SubjectKey, groupId: string, name: string, englishStudentId?: string | null) => Promise<SubjectStudent | null>;
   renameStudent: (id: string, name: string) => Promise<boolean>;
+  /** Renames every membership row of one person in ONE statement, so a person can never end up half-renamed. */
+  renameStudents: (ids: string[], name: string) => Promise<boolean>;
   setStudentArchived: (id: string, archived: boolean) => Promise<boolean>;
   saveLesson: (subject: SubjectKey, groupId: string, date: string, patch: LessonPatch) => Promise<boolean>;
   setRecord: (subject: SubjectKey, groupId: string, date: string, studentId: string, patch: RecordPatch) => Promise<boolean>;
@@ -232,6 +234,20 @@ export function SubjectProvider({ children }: { children: ReactNode }) {
     [fail],
   );
   const renameStudent = useCallback<SubjectApi["renameStudent"]>((id, name) => patchStudent(id, { name: name.trim() }, "Ism o'zgarmadi"), [patchStudent]);
+  const renameStudents = useCallback<SubjectApi["renameStudents"]>(
+    async (ids, name) => {
+      if (ids.length === 0) return true;
+      const clean = name.trim();
+      begin();
+      const { error: err } = await getSupabase().from("subject_students").update({ name: clean }).in("id", ids);
+      end(!err);
+      if (err) return fail(err, "Ism o'zgarmadi");
+      const set = new Set(ids);
+      setStudents((ss) => ss.map((s) => (set.has(s.id) ? { ...s, name: clean } : s)));
+      return true;
+    },
+    [fail],
+  );
   const setStudentArchived = useCallback<SubjectApi["setStudentArchived"]>(
     (id, archived) => patchStudent(id, { archived_at: archived ? new Date().toISOString() : null }, "O'quvchi holati o'zgarmadi"),
     [patchStudent],
@@ -370,10 +386,10 @@ export function SubjectProvider({ children }: { children: ReactNode }) {
       status, error, reload,
       all: { groups, students, lessons, records },
       pendingWrites, lastSavedAt,
-      addGroup, renameGroup, setGroupArchived, addStudent, renameStudent, setStudentArchived,
+      addGroup, renameGroup, setGroupArchived, addStudent, renameStudent, renameStudents, setStudentArchived,
       saveLesson, setRecord, markAllPresent,
     }),
-    [status, error, reload, groups, students, lessons, records, pendingWrites, lastSavedAt, addGroup, renameGroup, setGroupArchived, addStudent, renameStudent, setStudentArchived, saveLesson, setRecord, markAllPresent],
+    [status, error, reload, groups, students, lessons, records, pendingWrites, lastSavedAt, addGroup, renameGroup, setGroupArchived, addStudent, renameStudent, renameStudents, setStudentArchived, saveLesson, setRecord, markAllPresent],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

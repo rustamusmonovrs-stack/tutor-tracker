@@ -2282,3 +2282,45 @@ dialog.drawer[open] { animation: drawer-in 180ms ease-out; }
 .sj-inline { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .sj-move { width: auto; max-width: 190px; }
 .sj-check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+
+/* ---- Matematika / Tarix: Guruhlar + O'quvchilar pages ---- */
+.sj-toolbar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
+.sj-toolbar__select { width: auto; min-width: 170px; max-width: 100%; }
+.sj-search { position: relative; flex: 1 1 240px; max-width: 360px; display: block; }
+.sj-search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--ink-3); pointer-events: none; }
+.sj-search .input { padding-left: 34px; }
+.sj-empty { display: grid; justify-items: center; gap: var(--s2); padding: var(--s6) var(--s4); text-align: center; }
+.sj-empty .hint { margin: 0; max-width: 42ch; }
+.sj-empty--inline { padding: var(--s4); text-align: center; }
+.sj-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.sj-gcard__head { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; padding: var(--s3) var(--s4); }
+.sj-gcard__title { display: flex; align-items: baseline; gap: 4px var(--s3); flex-wrap: wrap; min-width: 0; }
+.sj-gcard__meta { color: var(--ink-3); font-size: var(--fs-sm); }
+.sj-gcard__body { display: grid; gap: var(--s3); padding: var(--s3) var(--s4) var(--s4); border-top: 1px solid var(--line); }
+.sj-flip { transform: rotate(180deg); }
+.sj-members { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.sj-member { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; padding: 8px var(--s3); border-top: 1px solid var(--line); }
+.sj-member:first-child { border-top: 0; }
+.sj-chip { margin-left: 8px; }
+.sj-chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+
+.sj-people { list-style: none; margin: 0; padding: 0; overflow: hidden; }
+.sj-people > li:first-child .sj-prow { border-top: 0; }
+.sj-prow { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 4px var(--s3); align-items: center; width: 100%; padding: 10px var(--s4); border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sj-prow:hover { background: var(--surface-2); }
+.sj-prow:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
+.sj-prow--head { display: none; cursor: default; background: var(--surface-2); color: var(--ink-3); font-size: var(--fs-xs); font-weight: 650; border-top: 0; padding-top: 8px; padding-bottom: 8px; }
+.sj-prow--head:hover { background: var(--surface-2); }
+.sj-prow .sj-chips { grid-column: 1 / -1; }
+.sj-m { font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: var(--ink-2); }
+.sj-m::before { content: attr(data-label) " "; color: var(--ink-3); font-size: var(--fs-xs); }
+@media (min-width: 860px) {
+  .sj-prow, .sj-prow--head { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 84px 84px 84px; }
+  .sj-prow--head { display: grid; }
+  .sj-prow .sj-chips { grid-column: auto; }
+  .sj-m::before { content: none; }
+}
+dialog.sj-drawer { width: min(560px, 100vw); }
+.sj-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.sj-drawer .drawer__panel { grid-template-columns: minmax(0, 1fr); }
+.sj-drawer .sj-bars li { grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) 52px; }

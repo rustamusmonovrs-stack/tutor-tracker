@@ -121,6 +121,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   private payload: Row | Row[] | null = null;
   private opts: { onConflict?: string; ignoreDuplicates?: boolean } = {};
   private filters: [string, unknown][] = [];
+  private inFilters: [string, unknown[]][] = [];
   private from = 0;
   private to = Infinity;
   private returning = true;
@@ -160,6 +161,11 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     this.filters.push([col, val]);
     return this;
   }
+  /** `.in(col, values)`: PostgREST `col=in.(...)`. */
+  in(col: string, vals: unknown[]) {
+    this.inFilters.push([col, vals]);
+    return this;
+  }
   order() {
     return this;
   }
@@ -187,7 +193,7 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
   }
 
   private matches(row: Row): boolean {
-    return this.filters.every(([c, v]) => row[c] === v);
+    return this.filters.every(([c, v]) => row[c] === v) && this.inFilters.every(([c, vs]) => vs.includes(row[c]));
   }
 
   /** Mirrors the database rules of supabase/migrations/20261031_subjects.sql so UI error paths can be tested in demo mode. */

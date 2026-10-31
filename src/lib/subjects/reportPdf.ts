@@ -184,7 +184,26 @@ export async function buildReportPdf(model: ReportModel, fonts: PdfFonts): Promi
     const natural = [labelW, ...Array(rest).fill(each)];
     const sum = natural.reduce((a, b) => a + b, 0);
     // wide summary tables: scale to fit; matrices are chunked so they never need to shrink below MIN_COL
-    return sum > contentW ? natural.map((w) => (w * contentW) / sum) : sum < contentW && columns.some((c) => c.align !== "left") && rows.length ? stretch(natural, contentW) : natural;
+    const fitted = sum > contentW ? natural.map((w) => (w * contentW) / sum) : sum < contentW && columns.some((c) => c.align !== "left") && rows.length ? stretch(natural, contentW) : natural;
+    return keepWordsWhole(columns, fitted);
+  }
+  /** A header word must never be cut mid-word ("Kiritilmaga/n"): widen such columns, taking the width from columns with slack. */
+  function keepWordsWhole(columns: TableColumn[], widths: number[]): number[] {
+    const need = columns.map((c) => Math.max(0, ...c.header.split(/\s+/).map((w) => bold.widthOfTextAtSize(safe(w), SIZE))) + 2 * PAD + 1);
+    const out = [...widths];
+    let deficit = 0;
+    out.forEach((w, i) => {
+      if (w < need[i]) {
+        deficit += need[i] - w;
+        out[i] = need[i];
+      }
+    });
+    if (deficit <= 0) return out;
+    const slack = out.map((w, i) => (w > need[i] ? w - need[i] : 0));
+    const totalSlack = slack.reduce((a, b) => a + b, 0);
+    if (totalSlack <= 0) return out;
+    const take = Math.min(1, deficit / totalSlack);
+    return out.map((w, i) => w - slack[i] * take);
   }
   function stretch(w: number[], total: number): number[] {
     const extra = total - w.reduce((a, b) => a + b, 0);

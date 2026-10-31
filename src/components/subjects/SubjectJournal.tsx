@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { IconBook, IconChevronLeft, IconChevronRight, IconPresent } from "@/components/icons";
@@ -82,7 +83,7 @@ export function SubjectJournal() {
 
       <div className="card">
         {roster.length === 0 ? (
-          <div className="empty"><strong>Guruhda o&apos;quvchi yo&apos;q</strong><p className="hint">&quot;Guruhlar va o&apos;quvchilar&quot; bo&apos;limida qo&apos;shing.</p></div>
+          <div className="empty"><strong>Guruhda o&apos;quvchi yo&apos;q</strong><p className="hint"><Link href={`${SUBJECTS[subject].path}/groups`}>Guruhlar</Link> bo&apos;limida o&apos;quvchi qo&apos;shing.</p></div>
         ) : (
           <div className="sj-table" role="table" aria-label="Jurnal">
             <div className={`sj-row sj-row--head${showScore ? " sj-row--score" : ""}`} role="row">
@@ -268,7 +269,7 @@ function LessonInfo({ subject, groupId, date, lesson, records }: { subject: Retu
           <div className="sj-test__fields">
             <label className="field">
               <span className="field__label">Test nomi/mavzusi (ixtiyoriy)</span>
-              <input className="input" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} onBlur={saveMax} />
+              <input className="input" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} onBlur={() => max.trim() !== "" && saveMax()} />
             </label>
             <label className="field">
               <span className="field__label">Maksimal ball *</span>

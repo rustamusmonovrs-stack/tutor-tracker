@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Kpi } from "@/components/ui";
 import { addDays, formatShort, todayISO } from "@/lib/dates";
 import { useSubjectScope } from "@/lib/subjects/data";
+import { personKey } from "@/lib/subjects/people";
 import { buildReport } from "@/lib/subjects/report";
 import { studentTestHistory, summarize } from "@/lib/subjects/stats";
 import { SUBJECTS } from "@/lib/subjects/types";
@@ -11,7 +12,7 @@ import { PctBars } from "./PctBars";
 import { NoGroups, fmtPct } from "./shared";
 
 export function SubjectStats() {
-  const { subject, groups, activeGroups, activeStudents, students, lessons, records } = useSubjectScope();
+  const { subject, groups, activeGroups, students, lessons, records } = useSubjectScope();
   const today = todayISO();
   const [groupId, setGroupId] = useState(""); // "" = all active groups
   const [from, setFrom] = useState(addDays(today, -90));
@@ -27,7 +28,9 @@ export function SubjectStats() {
 
   if (groups.length === 0) return (<><div className="page-head"><h1 className="page-title">Statistika</h1></div><NoGroups subject={subject} /></>);
 
-  const enrolled = groupId ? activeStudents.filter((s) => s.group_id === groupId).length : activeStudents.length;
+  // distinct people: someone in two groups is one student, not two
+  const chosenIds = new Set(chosen.map((g) => g.id));
+  const enrolled = new Set(students.filter((s) => !s.archived_at && chosenIds.has(s.group_id)).map(personKey)).size;
   const tests = models.flatMap((m) => m.testSummaries.map((t) => ({ ...t, group: m.groupName }))).sort((a, b) => (a.date < b.date ? -1 : 1));
   const one = groupId ? models[0] : null;
   const history = one && studentId ? studentTestHistory(one, studentId) : [];

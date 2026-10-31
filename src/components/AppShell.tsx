@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Calculator, FileText, Landmark, Languages } from "lucide-react";
+import { Calculator, FileText, Landmark, Languages, UsersRound } from "lucide-react";
 import { IconAward, IconMock, IconPeople, IconRank, IconStages, IconStats, IconToday, IconWatch } from "@/components/icons";
 import { useData } from "@/lib/data";
 import { useHomework } from "@/lib/homeworkData";
@@ -38,7 +38,8 @@ const SUBJECT_TABS = [
 function subjectLinks(base: string) {
   return [
     { href: base, label: "Bugun", icon: IconToday },
-    { href: `${base}/groups`, label: "Guruhlar va o'quvchilar", short: "Guruhlar", icon: IconPeople },
+    { href: `${base}/groups`, label: "Guruhlar", icon: UsersRound },
+    { href: `${base}/students`, label: "O'quvchilar", short: "O'quvchi", icon: IconPeople },
     { href: `${base}/tests`, label: "Test natijalari", short: "Testlar", icon: IconMock },
     { href: `${base}/stats`, label: "Statistika", short: "Stat.", icon: IconStats },
     { href: `${base}/reports`, label: "Hisobotlar", short: "Hisobot", icon: FileText },

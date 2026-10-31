@@ -31,27 +31,36 @@ export function SubjectSaveChip() {
   return null;
 }
 
-/** Remembers the chosen group per subject across refreshes (per browser tab). Falls back to the first group. */
+const groupKey = (subject: SubjectKey) => `ark.${subject}.group`;
+
+/** Remember the group the journal / tests / reports should open with (per browser tab). */
+export function rememberGroup(subject: SubjectKey, id: string) {
+  try {
+    window.sessionStorage.setItem(groupKey(subject), id);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Remembers the chosen group per subject across pages and refreshes (per browser tab); falls back to the first group.
+ * Read synchronously: these pages only render after the data has loaded on the client, so there is no server render to
+ * mismatch and no one-frame flash of the wrong group.
+ */
 export function useStoredGroup(subject: SubjectKey, groups: SubjectGroup[]): [SubjectGroup | null, (id: string) => void] {
-  const key = `ark.${subject}.group`;
-  const [id, setId] = useState<string | null>(null);
-  useEffect(() => {
+  const [id, setId] = useState<string | null>(() => {
     try {
-      setId(window.sessionStorage.getItem(key));
+      return typeof window === "undefined" ? null : window.sessionStorage.getItem(groupKey(subject));
     } catch {
-      /* storage unavailable */
+      return null;
     }
-  }, [key]);
+  });
   const group = groups.find((g) => g.id === id) ?? groups[0] ?? null;
   return [
     group,
     (next) => {
       setId(next);
-      try {
-        window.sessionStorage.setItem(key, next);
-      } catch {
-        /* ignore */
-      }
+      rememberGroup(subject, next);
     },
   ];
 }
@@ -72,9 +81,9 @@ export function NoGroups({ subject }: { subject: SubjectKey }) {
   return (
     <div className="card empty">
       <strong>{SUBJECTS[subject].label}: hali guruh yo&apos;q</strong>
-      <p className="hint">Avval guruh va o&apos;quvchilarni qo&apos;shing.</p>
+      <p className="hint">Avval guruh yarating, so&apos;ng o&apos;quvchilarni qo&apos;shing.</p>
       <Link className="btn btn--primary" href={`${SUBJECTS[subject].path}/groups`}>
-        Guruhlar va o&apos;quvchilar
+        Guruh yaratish
       </Link>
     </div>
   );
