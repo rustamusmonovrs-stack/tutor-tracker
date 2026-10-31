@@ -7,7 +7,7 @@ import { addDays, todayISO, weekStart } from "../dates";
 import { evaluateWatch, missedRun, type Assessment, type Assignment, type HwTask, type WatchCase } from "../homework";
 
 type Row = Record<string, unknown>;
-type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores" | "curriculum_programs" | "curriculum_books" | "student_learning_progress" | "student_book_history" | "student_group_transfer_history" | "student_programs" | "saturday_plans" | "certificates" | "homework_tasks" | "student_task_assignments" | "student_task_assessments" | "homework_task_events" | "homework_watch_cases" | "homework_watch_case_events" | "homework_watch_notes", Row[]>;
+type Tables = Record<"groups" | "students" | "topics" | "lessons" | "lesson_plans" | "mocks" | "mock_sections" | "mock_student_results" | "mock_section_scores" | "curriculum_programs" | "curriculum_books" | "student_learning_progress" | "student_book_history" | "student_group_transfer_history" | "student_programs" | "saturday_plans" | "certificates" | "homework_tasks" | "student_task_assignments" | "student_task_assessments" | "homework_task_events" | "homework_watch_cases" | "homework_watch_case_events" | "homework_watch_notes" | "subject_groups" | "subject_students" | "subject_lessons" | "subject_records", Row[]>;
 
 const STORAGE_KEY = "jurnal-demo-db-v2";
 const OBJECTS_KEY = "jurnal-demo-objects-v1";
@@ -82,7 +82,7 @@ function seed(): Tables {
         });
     });
   }
-  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [], curriculum_programs: [["general", "General English"], ["kids", "Kids English"], ["president", "Prezident maktabiga tayyorgarlik"]].map(([key, name], i) => ({ id: uuid(), key, name, position: i + 1, created_at: created })), curriculum_books: [], student_learning_progress: [], student_book_history: [], student_group_transfer_history: [], student_programs: [], saturday_plans: [], certificates: [], homework_tasks: [], student_task_assignments: [], student_task_assessments: [], homework_task_events: [], homework_watch_cases: [], homework_watch_case_events: [], homework_watch_notes: [] };
+  return { groups, students, topics: [], lessons, lesson_plans: plans, mocks: [], mock_sections: [], mock_student_results: [], mock_section_scores: [], curriculum_programs: [["general", "General English"], ["kids", "Kids English"], ["president", "Prezident maktabiga tayyorgarlik"]].map(([key, name], i) => ({ id: uuid(), key, name, position: i + 1, created_at: created })), curriculum_books: [], student_learning_progress: [], student_book_history: [], student_group_transfer_history: [], student_programs: [], saturday_plans: [], certificates: [], homework_tasks: [], student_task_assignments: [], student_task_assessments: [], homework_task_events: [], homework_watch_cases: [], homework_watch_case_events: [], homework_watch_notes: [], subject_groups: [], subject_students: [], subject_lessons: [], subject_records: [] };
 }
 
 function load(): Tables {
@@ -190,6 +190,40 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
     return this.filters.every(([c, v]) => row[c] === v);
   }
 
+  /** Mirrors the database rules of supabase/migrations/20261031_subjects.sql so UI error paths can be tested in demo mode. */
+  private subjectError(t: Tables, rows: Row[]): string | null {
+    const items = this.payload ? (Array.isArray(this.payload) ? this.payload : [this.payload]) : [];
+    const maxOf = (lessonId: unknown) => (t.subject_lessons.find((l) => l.id === lessonId)?.test_max as number | null | undefined) ?? null;
+    if (this.table === "subject_groups" && (this.op === "insert" || this.op === "update")) {
+      const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+      for (const it of items) {
+        const clash = rows.some((r) => !r.archived_at && norm(r.name) === norm(it.name ?? "\u0000") && r.subject === (it.subject ?? r.subject));
+        if (this.op === "insert" && clash) return 'duplicate key value violates unique constraint "subject_groups_active_name_uq"';
+        if (this.op === "update" && it.name !== undefined && rows.some((r) => !r.archived_at && !this.matches(r) && norm(r.name) === norm(it.name) && rows.filter((x) => this.matches(x)).some((x) => x.subject === r.subject))) return 'duplicate key value violates unique constraint "subject_groups_active_name_uq"';
+      }
+    }
+    if (this.table === "subject_lessons" && this.op === "update") {
+      const patch = this.payload as Row;
+      for (const lesson of rows.filter((r) => this.matches(r))) {
+        const nextMax = "test_max" in patch ? patch.test_max : lesson.test_max;
+        const nextHas = "has_test" in patch ? patch.has_test : lesson.has_test;
+        if (nextHas && nextMax == null) return 'new row violates check constraint "subject_lessons_test_needs_max"';
+        if ("test_max" in patch && t.subject_records.some((r) => r.lesson_id === lesson.id && r.score != null && (nextMax == null || (r.score as number) > (nextMax as number)))) return "Maksimal ball kiritilgan ballardan kichik bo'lishi mumkin emas";
+      }
+    }
+    if (this.table === "subject_records" && (this.op === "insert" || this.op === "upsert" || this.op === "update")) {
+      const targets = this.op === "update" ? rows.filter((r) => this.matches(r)).map((r) => ({ ...r, ...(this.payload as Row) })) : items;
+      for (const it of targets) {
+        if (it.score == null) continue;
+        if (!Number.isInteger(it.score) || (it.score as number) < 0) return 'new row violates check constraint "subject_records_score_check"';
+        const max = maxOf(it.lesson_id);
+        if (max == null) return "Bu dars uchun maksimal ball belgilanmagan";
+        if ((it.score as number) > max) return `Ball (${it.score}) maksimal balldan (${max}) oshmasligi kerak`;
+      }
+    }
+    return null;
+  }
+
   private run(): { data: unknown; error: { message: string } | null } {
     const t = tables();
     const rows = t[this.table];
@@ -205,6 +239,10 @@ class Query implements PromiseLike<{ data: unknown; error: { message: string } |
         if (items.some(noContent)) return bad; // Postgres checks the proposed row before ON CONFLICT
       }
       if (this.op === "update" && noContent({ ...(rows.find((r) => this.matches(r)) ?? {}), ...(this.payload as Row) })) return bad;
+    }
+    if (this.table.startsWith("subject_") && this.op !== "select") {
+      const msg = this.subjectError(t, rows);
+      if (msg) return { data: null, error: { message: msg } };
     }
     let out: Row[] = [];
     if (this.op === "select") {

@@ -115,3 +115,12 @@ describe("buildReport", () => {
     expect(r.rows[0].avgTestPct).toBe(75); // mean(50%, 100%)
   });
 });
+
+describe("roster rules", () => {
+  it("keeps an archived student only when they have records in the period", () => {
+    const students = [stu("a", "Ali"), stu("z", "Zebo", { archived_at: "2026-10-20T00:00:00Z" }), stu("y", "Yodgor", { archived_at: "2026-10-20T00:00:00Z" })];
+    const lessons = [les("l1", "2026-10-05")];
+    const r = buildReport({ ...base, students, lessons, records: [rec("l1", "z", { attendance: "present" })] });
+    expect(r.rows.map((x) => x.name)).toEqual(["Ali", "Zebo"]);
+  });
+});

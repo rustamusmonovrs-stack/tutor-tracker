@@ -100,13 +100,20 @@ export function buildReport(input: ReportInput): ReportModel {
     .filter((l) => l.subject === subject && l.group_id === group.id && l.lesson_date >= from && l.lesson_date <= to)
     .sort((a, b) => (a.lesson_date < b.lesson_date ? -1 : a.lesson_date > b.lesson_date ? 1 : 0));
   const lessonIds = new Set(lessons.map((l) => l.id));
+  const inScope = input.records.filter((r) => r.subject === subject && r.group_id === group.id && lessonIds.has(r.lesson_id));
+  const withRecords = new Set(inScope.map((r) => r.student_id));
+  // Archived students stay in the report only if they have records in the period (history is never hidden).
   const roster = input.students
-    .filter((s) => s.subject === subject && s.group_id === group.id && (!input.studentId || s.id === input.studentId))
+    .filter(
+      (s) =>
+        s.subject === subject &&
+        s.group_id === group.id &&
+        (!input.studentId || s.id === input.studentId) &&
+        (!s.archived_at || withRecords.has(s.id)),
+    )
     .sort((a, b) => a.name.localeCompare(b.name, "uz"));
   const rosterIds = new Set(roster.map((s) => s.id));
-  const records = input.records.filter(
-    (r) => r.subject === subject && r.group_id === group.id && lessonIds.has(r.lesson_id) && rosterIds.has(r.student_id),
-  );
+  const records = inScope.filter((r) => rosterIds.has(r.student_id));
 
   const dateOf = new Map(lessons.map((l) => [l.id, l.lesson_date]));
   // A disabled test is not a recorded test: its stored scores are kept in the database but not reported.
