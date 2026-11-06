@@ -7,6 +7,8 @@ import { IconBook, IconChevronLeft, IconChevronRight, IconPresent } from "@/comp
 import { Meter } from "@/components/ui";
 import { ATTENDANCE_META } from "@/lib/config";
 import { addDays, formatDay, todayISO } from "@/lib/dates";
+import { DailyReportCard } from "@/components/DailyReportCard";
+import { buildSubjectDaily, subjectLessonDates } from "@/lib/daily/build";
 import { useSubjectScope } from "@/lib/subjects/data";
 import { SUBJECTS, type SubjectHomework, type SubjectLesson, type SubjectRecord } from "@/lib/subjects/types";
 import { pct } from "@/lib/subjects/report";
@@ -16,7 +18,7 @@ const HW_ORDER: SubjectHomework[] = ["submitted", "not_submitted", "unchecked"];
 
 /** Daily journal shared by Matematika and Tarix. Each subject sees only its own groups and records. */
 export function SubjectJournal() {
-  const { subject, api, activeGroups, activeStudents, lessons, records } = useSubjectScope();
+  const { subject, api, activeGroups, activeStudents, students, lessons, records } = useSubjectScope();
   const today = todayISO();
   const [date, setDate] = useState(today);
   const [group, pickGroup] = useStoredGroup(subject, activeGroups);
@@ -145,6 +147,12 @@ export function SubjectJournal() {
           </div>
         )}
       </div>
+      <DailyReportCard
+        key={`${group.id}|${date}`}
+        pageDate={date}
+        dates={subjectLessonDates(subject, group.id, lessons)}
+        build={(d) => buildSubjectDaily({ subject, group, date: d, students, lessons, records, generatedOn: today })}
+      />
       <p className="hint" style={{ marginTop: 8 }}>
         Belgilanmagan = hali kiritilmagan (Kelmadi / Topshirmadi emas). {SUBJECTS[subject].label} yozuvlari English jurnalidan alohida saqlanadi.
       </p>

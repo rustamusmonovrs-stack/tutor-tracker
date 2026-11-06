@@ -8,6 +8,8 @@ import { ProgressButton } from "@/components/HomeworkParts";
 import { HomeworkTasks } from "@/components/HomeworkTasks";
 import { IconChevronLeft, IconChevronRight, IconCoin, IconAlert, IconBook, IconHistory, IconPresent, IconWatch } from "@/components/icons";
 import { AttendanceMarks, Meter, SaveChip } from "@/components/ui";
+import { DailyReportCard } from "@/components/DailyReportCard";
+import { buildEnglishDaily, englishLessonDates } from "@/lib/daily/build";
 import { HOMEWORK_META } from "@/lib/config";
 import { studentProgress } from "@/lib/homework";
 import { useHomework } from "@/lib/homeworkData";
@@ -24,6 +26,8 @@ export default function TodayPage() {
   const {
     activeGroups,
     activeStudents,
+    students: allStudents,
+    lessons: allLessons,
     lessonsByStudent,
     topicsByStudent,
     plans,
@@ -407,6 +411,28 @@ export default function TodayPage() {
           </>
         )}
       </div>
+
+      {group && (
+        <DailyReportCard
+          key={`${group.id}|${date}`}
+          pageDate={date}
+          dates={englishLessonDates(group.id, allStudents, allLessons, plans, hw.tasks)}
+          build={(d) =>
+            buildEnglishDaily({
+              group,
+              date: d,
+              students: allStudents,
+              lessons: allLessons,
+              plans,
+              tasks: hw.tasks,
+              assignedSet: hw.assignedSet,
+              assessMap: hw.assessMap,
+              coinEvents: hw.coinEvents,
+              generatedOn: today,
+            })
+          }
+        />
+      )}
 
       {group && <HomeworkDrawer student={drawerFor} group={group} date={date} legacy={drawerFor ? (rows.find((r) => r.student.id === drawerFor.id)?.existing?.homework ?? null) : null} onClose={() => setDrawerFor(null)} />}
     </>

@@ -2328,3 +2328,14 @@ dialog.sj-drawer { width: min(560px, 100vw); }
 .sj-choice legend { padding: 0 4px; }
 .sj-choice__opt { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-sm); cursor: pointer; }
 .sj-choice__opt input { margin-top: 3px; }
+
+/* Kunlik hisobot (daily journal export) */
+.dr { display: grid; gap: var(--s3); padding: var(--s4); margin-top: 12px; }
+.dr__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.dr__title { display: inline-flex; align-items: center; gap: var(--s2); margin: 0; font-size: var(--fs-lg); font-weight: 650; color: var(--ink); }
+.dr__head .hint { margin: 0; }
+.dr__controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s3); }
+.dr__date { min-width: 220px; flex: 1 1 220px; max-width: 360px; }
+.dr__actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.dr__actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 520px) { .dr__actions { width: 100%; } .dr__actions .btn { flex: 1 1 100%; justify-content: center; } }
