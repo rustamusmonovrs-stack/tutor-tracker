@@ -13,6 +13,7 @@ import { buildEnglishDaily, englishLessonDates } from "@/lib/daily/build";
 import { HOMEWORK_META } from "@/lib/config";
 import { studentProgress } from "@/lib/homework";
 import { useHomework } from "@/lib/homeworkData";
+import { useStages } from "@/lib/stagesData";
 import { useData, type PlanPatch } from "@/lib/data";
 import { addDays, formatDay, formatShort, todayISO, weekStart } from "@/lib/dates";
 import { currentTopic } from "@/lib/progress";
@@ -37,6 +38,7 @@ export default function TodayPage() {
     isSaving,
   } = data;
   const hw = useHomework();
+  const { transfersByStudent } = useStages();
   const [drawerFor, setDrawerFor] = useState<Student | null>(null);
 
   const today = todayISO();
@@ -416,7 +418,7 @@ export default function TodayPage() {
         <DailyReportCard
           key={`${group.id}|${date}`}
           pageDate={date}
-          dates={englishLessonDates(group.id, allStudents, allLessons, plans, hw.tasks)}
+          dates={englishLessonDates(group.id, allStudents, allLessons, plans, hw.tasks, transfersByStudent)}
           build={(d) =>
             buildEnglishDaily({
               group,
@@ -428,6 +430,7 @@ export default function TodayPage() {
               assignedSet: hw.assignedSet,
               assessMap: hw.assessMap,
               coinEvents: hw.coinEvents,
+              transfersByStudent,
               generatedOn: today,
             })
           }

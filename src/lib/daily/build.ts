@@ -1,6 +1,7 @@
 import { todayISO } from "../dates";
 import { scoreLessons } from "../scoring";
 import type { Assessment, CoinEvent, HwTask } from "../homework";
+import type { GroupTransfer } from "../stages";
 import type { Group, Lesson, LessonPlan, Student } from "../types";
 import type { SubjectGroup, SubjectKey, SubjectLesson, SubjectRecord, SubjectStudent } from "../subjects/types";
 import {
@@ -76,6 +77,7 @@ export function buildSubjectDaily(input: SubjectDailyInput): DailyReport {
     topic: clean(lesson?.topic),
     homeworkText: clean(lesson?.homework),
     hasData: lesson !== null || recs.length > 0,
+    historical: date < generatedOn,
     homeworkMode: "simple",
     tasks: [],
     test,
@@ -102,13 +104,40 @@ export interface EnglishDailyInput {
   assignedSet: Set<string>;
   assessMap: Map<string, Assessment>;
   coinEvents: CoinEvent[];
+  /** Group changes per student (student_group_transfer_history): the only record of who was in which group when. */
+  transfersByStudent: Map<string, GroupTransfer[]>;
   generatedOn: string;
 }
 
-export function englishLessonDates(groupId: string, students: Student[], lessons: Lesson[], plans: LessonPlan[], tasks: HwTask[]): string[] {
-  const ids = new Set(students.filter((s) => s.group_id === groupId).map((s) => s.id));
+/**
+ * The group a student belonged to at the end of `date` (Asia/Tashkent), from the transfer history.
+ * Day granularity: a transfer made on `date` counts as already moved. Returns null when the history says the
+ * student was in a group that no longer exists (never guessed). With no history the current group is the answer.
+ */
+export function groupOnDate(currentGroupId: string, transfers: GroupTransfer[] | undefined, date: string): string | null {
+  const sorted = [...(transfers ?? [])].sort((a, b) => a.transferred_at.localeCompare(b.transferred_at));
+  let lastPast: GroupTransfer | null = null;
+  for (const t of sorted) {
+    if (dayOf(t.transferred_at) <= date) lastPast = t;
+    else return lastPast ? lastPast.to_group_id : t.from_group_id; // first transfer after the date: where they were before it
+  }
+  return lastPast ? lastPast.to_group_id : currentGroupId;
+}
+
+export function englishLessonDates(
+  groupId: string,
+  students: Student[],
+  lessons: Lesson[],
+  plans: LessonPlan[],
+  tasks: HwTask[],
+  transfersByStudent: Map<string, GroupTransfer[]> = new Map(),
+): string[] {
+  const byId = new Map(students.map((s) => [s.id, s]));
   const dates = new Set<string>();
-  for (const l of lessons) if (ids.has(l.student_id)) dates.add(l.lesson_date);
+  for (const l of lessons) {
+    const s = byId.get(l.student_id);
+    if (s && groupOnDate(s.group_id, transfersByStudent.get(s.id), l.lesson_date) === groupId) dates.add(l.lesson_date);
+  }
   for (const p of plans) if (p.group_id === groupId && (clean(p.topic) || clean(p.homework))) dates.add(p.lesson_date);
   for (const t of tasks) if (t.group_id === groupId && !t.archived_at) dates.add(t.lesson_date);
   return [...dates].sort().reverse();
@@ -117,7 +146,8 @@ export function englishLessonDates(groupId: string, students: Student[], lessons
 export function buildEnglishDaily(input: EnglishDailyInput): DailyReport {
   const { group, date, assignedSet, assessMap, generatedOn } = input;
 
-  const groupStudents = input.students.filter((s) => s.group_id === group.id);
+  // Historical roster: who was in THIS group on THIS date (transfer history), not who is in it today.
+  const groupStudents = input.students.filter((s) => groupOnDate(s.group_id, input.transfersByStudent.get(s.id), date) === group.id);
   const lessonsByStudent = new Map<string, Lesson[]>();
   for (const l of input.lessons) {
     const list = lessonsByStudent.get(l.student_id);
@@ -125,9 +155,11 @@ export function buildEnglishDaily(input: EnglishDailyInput): DailyReport {
     else lessonsByStudent.set(l.student_id, [l]);
   }
 
-  // Same task list as the Bugun page: active tasks of this group and day, in their order.
+  // The day's tasks in their order: active ones, plus archived ones that were graded (their assessments and coins
+  // still exist, so leaving them out would make the report disagree with the coins). Never-graded archived tasks stay out.
+  const gradedTaskIds = new Set([...assessMap.keys()].map((k) => k.split("|")[0]));
   const tasks = input.tasks
-    .filter((t) => t.group_id === group.id && t.lesson_date === date && !t.archived_at)
+    .filter((t) => t.group_id === group.id && t.lesson_date === date && (!t.archived_at || gradedTaskIds.has(t.id)))
     .sort((a, b) => a.position - b.position || (a.created_at < b.created_at ? -1 : 1));
   const taskIds = tasks.map((t) => t.id);
   const plan = input.plans.find((p) => p.group_id === group.id && p.lesson_date === date) ?? null;
@@ -178,7 +210,7 @@ export function buildEnglishDaily(input: EnglishDailyInput): DailyReport {
     };
   });
 
-  const dailyTasks: DailyTask[] = tasks.map((t) => ({ id: t.id, title: t.title, due: t.due_date }));
+  const dailyTasks: DailyTask[] = tasks.map((t) => ({ id: t.id, title: t.title, due: t.due_date, archived: t.archived_at !== null }));
   const anyLesson = groupStudents.some((s) => lessonOf(s.id) !== null);
 
   return {
@@ -188,6 +220,7 @@ export function buildEnglishDaily(input: EnglishDailyInput): DailyReport {
     date,
     topic: clean(plan?.topic),
     homeworkText: clean(plan?.homework),
+    historical: date < generatedOn,
     hasData: anyLesson || tasks.length > 0 || Boolean(clean(plan?.topic)) || Boolean(clean(plan?.homework)),
     homeworkMode: "smart",
     tasks: dailyTasks,

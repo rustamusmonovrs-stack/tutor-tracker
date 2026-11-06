@@ -61,6 +61,8 @@ export interface DailyTask {
   id: string;
   title: string;
   due: string | null;
+  /** Archived after being graded: kept in the report because its assessments (and coins) still exist. */
+  archived: boolean;
 }
 
 export interface DailyTest {
@@ -130,6 +132,8 @@ export interface DailyReport {
   homeworkText: string | null;
   /** Anything recorded for this group on this date (lesson row, plan, tasks, student records). */
   hasData: boolean;
+  /** The report date is before the day the report was generated (roster is reconstructed from history). */
+  historical: boolean;
   homeworkMode: "simple" | "smart";
   tasks: DailyTask[];
   test: DailyTest | null;

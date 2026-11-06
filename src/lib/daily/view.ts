@@ -208,7 +208,7 @@ export function buildDailyView(r: DailyReport): DailyView {
   if (smart && r.tasks.length > 0) {
     appendix = {
       title: "Ilova: berilgan vazifalar va bajarilish holati",
-      intro: r.tasks.map((t, i) => `${i + 1}-vazifa: ${t.title}${t.due ? ` (muddat: ${fullDate(t.due)})` : ""}`),
+      intro: r.tasks.map((t, i) => `${i + 1}-vazifa: ${t.title}${t.archived ? " [arxivlangan]" : ""}${t.due ? ` (muddat: ${fullDate(t.due)})` : ""}`),
       legend: "Faqat o‘quvchiga berilgan vazifalar baholanadi. «Berilmagan» — bu vazifa o‘quvchiga berilmagan.",
       columns: [
         { header: "№", align: "center", weight: 6 },
@@ -229,6 +229,15 @@ export function buildDailyView(r: DailyReport): DailyView {
       ? "Baholanmagan vazifa muvaffaqiyatsizlik deb hisoblanmaydi. Tangalar mavjud hisob-kitobdan olingan, hisobot ularni o‘zgartirmaydi."
       : "Tekshirilmagan yoki kiritilmagan vazifa «topshirmadi» deb hisoblanmaydi.",
   ];
+
+  if (r.tasks.some((t) => t.archived)) notes.push("[arxivlangan] vazifalar keyin arxivlangan, lekin baholari saqlanib qolgani uchun hisobotga kiritilgan.");
+  if (r.historical) {
+    notes.push(
+      smart
+        ? "O‘quvchilar ro‘yxati guruh almashish tarixi va arxivlash sanalari bo‘yicha tiklangan (kun aniqligida: shu kuni guruhi almashgan o‘quvchi yangi guruhda hisoblanadi)."
+        : "O‘quvchilar ro‘yxati qo‘shilgan va arxivlangan sanalar bo‘yicha tiklangan (kun aniqligida).",
+    );
+  }
 
   return {
     brand: DAILY_BRAND,

@@ -8,7 +8,8 @@ import { taskCoinEvents } from "../homework";
 import { scoreLessons } from "../scoring";
 import type { Lesson, LessonPlan, Student } from "../types";
 import type { SubjectLesson, SubjectRecord, SubjectStudent } from "../subjects/types";
-import { buildEnglishDaily, buildSubjectDaily, englishLessonDates, subjectLessonDates } from "./build";
+import type { GroupTransfer } from "../stages";
+import { buildEnglishDaily, buildSubjectDaily, englishLessonDates, groupOnDate, subjectLessonDates } from "./build";
 import { portraitDataUri, renderDailyHtml } from "./html";
 import { buildDailyPdf } from "./pdf";
 import { buildDailyView } from "./view";
@@ -18,6 +19,7 @@ const fonts = {
   bold: new Uint8Array(readFileSync("public/fonts/DejaVuSans-Bold.ttf")),
 };
 const portrait = new Uint8Array(readFileSync("public/brand/teacher-rustam-usmonov.jpg"));
+const portraitGray = new Uint8Array(readFileSync("public/brand/teacher-rustam-usmonov-gray.jpg"));
 const outDir = process.env.REPORT_OUT ?? mkdtempSync(join(tmpdir(), "daily-"));
 const pdfText = (f: string) => execFileSync("pdftotext", ["-layout", f, "-"]).toString();
 const pageCount = (f: string) => Number(/Pages:\s+(\d+)/.exec(execFileSync("pdfinfo", [f]).toString())![1]);
@@ -167,7 +169,7 @@ function englishData() {
 describe("english daily report (Smart Homework, existing coins)", () => {
   const e = englishData();
   const report = () =>
-    buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: e.tasks, assignedSet: e.assigned, assessMap: e.assessMap, coinEvents: e.coinEvents, generatedOn: TODAY });
+    buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: e.tasks, assignedSet: e.assigned, assessMap: e.assessMap, coinEvents: e.coinEvents, transfersByStudent: new Map(), generatedOn: TODAY });
 
   it("assesses each student only against tasks actually assigned to them; archived tasks are not part of the day", () => {
     const r = report();
@@ -223,7 +225,7 @@ describe("english daily report (Smart Homework, existing coins)", () => {
 
   it("legacy per-lesson homework grade shows only when the student has no tasks", () => {
     const lessons = [...e.lessons.filter((l) => l.id !== "l-c"), { ...e.lessons.find((l) => l.id === "l-c")!, homework: "partial" as const }];
-    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons, plans: e.plans, tasks: [], assignedSet: new Set(), assessMap: new Map(), coinEvents: [], generatedOn: TODAY });
+    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons, plans: e.plans, tasks: [], assignedSet: new Set(), assessMap: new Map(), coinEvents: [], transfersByStudent: new Map(), generatedOn: TODAY });
     const v = buildDailyView(r);
     expect(v.table.rows.find((x) => x[1].text === "Dilshod Rahimov")![3].text).toBe("Chala (umumiy baho)");
     expect(v.appendix).toBeNull();
@@ -231,7 +233,7 @@ describe("english daily report (Smart Homework, existing coins)", () => {
 
   it("many tasks switch the PDF to landscape; previous dates are listed", () => {
     const many = Array.from({ length: 7 }, (_, i) => ({ ...e.tasks[0], id: `m${i}`, position: i + 10, title: `Vazifa ${i}` }));
-    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: many, assignedSet: new Set(many.map((t) => `${t.id}|a`)), assessMap: new Map(), coinEvents: [], generatedOn: TODAY });
+    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: many, assignedSet: new Set(many.map((t) => `${t.id}|a`)), assessMap: new Map(), coinEvents: [], transfersByStudent: new Map(), generatedOn: TODAY });
     expect(buildDailyView(r).wide).toBe(true);
     expect(englishLessonDates("g", e.students, e.lessons, e.plans, e.tasks)).toEqual([DATE, "2026-11-03", "2026-11-02"]);
   });
@@ -284,7 +286,7 @@ describe("HTML export", () => {
 
 describe("PDF export", () => {
   async function pdf(report: ReturnType<typeof buildSubjectDaily>, name: string) {
-    const bytes = await buildDailyPdf(buildDailyView(report), { fonts, portrait });
+    const bytes = await buildDailyPdf(buildDailyView(report), { fonts, portrait: portraitGray });
     const file = join(outDir, `${name}.pdf`);
     writeFileSync(file, bytes);
     return file;
@@ -304,7 +306,9 @@ describe("PDF export", () => {
     const info = execFileSync("pdfinfo", [file]).toString();
     expect(info).toMatch(/Page size:\s+595\.\d+ x 841\.\d+/); // A4 portrait
     expect(execFileSync("pdffonts", [file]).toString()).toMatch(/DejaVu/);
-    expect(execFileSync("pdfimages", ["-list", file]).toString()).toMatch(/\b480\s+480\b/); // portrait, untouched, square
+    const imgs = execFileSync("pdfimages", ["-list", file]).toString();
+    expect(imgs).toMatch(/\b480\s+480\b/); // portrait: square, aspect ratio untouched
+    expect(imgs).toMatch(/\bgray\b/); // the PDF copy of the photo is grayscale
     const text = pdfText(file);
     for (const s of ["ARK EDUCATION", "KUNLIK DARS HISOBOTI", "Teacher: Rustam Usmonov", "Fan", "Matematika", "Guruh", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘quvchilar soni", "Sahifa 1 / 1", "Natija", "Dars xulosasi", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
       expect(text, s).toContain(s);
@@ -337,9 +341,9 @@ describe("PDF export", () => {
 
   it("english with several tasks: statuses, progress and appendix are in the PDF", async () => {
     const e = englishData();
-    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: e.tasks, assignedSet: e.assigned, assessMap: e.assessMap, coinEvents: e.coinEvents, generatedOn: TODAY });
+    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: e.tasks, assignedSet: e.assigned, assessMap: e.assessMap, coinEvents: e.coinEvents, transfersByStudent: new Map(), generatedOn: TODAY });
     const file = join(outDir, "english.pdf");
-    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
+    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait: portraitGray }));
     const text = pdfText(file);
     for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "Qisman baholangan", "Berilmagan", "Ilova: berilgan vazifalar", "1-vazifa", "Tanga", "Baholanmagan vazifalar"]) {
       expect(text, s).toContain(s);
@@ -352,5 +356,60 @@ describe("PDF export", () => {
     const { students, lesson, rec, group } = subjectData("history", 8);
     const r = buildSubjectDaily({ subject: "history", group, date: DATE, students, generatedOn: TODAY, lessons: [lesson({ has_test: true, test_title: "Nazorat", test_max: 30 })], records: students.map((s, i) => rec(s.id, { attendance: i === 2 ? "absent" : i === 5 ? null : "present", homework: (["submitted", "not_submitted", "unchecked", null] as const)[i % 4], score: i === 1 ? 0 : i === 3 ? null : 12 + i })) });
     writeFileSync(join(outDir, "history.html"), renderDailyHtml(buildDailyView(r), portraitDataUri(portrait)));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Historical correctness (old dates): group transfers, archived graded tasks
+
+describe("old-date reports do not invent or lose history", () => {
+  const tr = (student_id: string, from: string | null, to: string | null, at: string): GroupTransfer => ({ id: `${student_id}${at}`, student_id, from_group_id: from, to_group_id: to, transferred_at: at, note: null });
+
+  it("groupOnDate: before / same day / after a transfer; no history = current group; deleted group is never guessed", () => {
+    const t = [tr("c", "g", "g2", "2026-11-05T05:00:00Z")]; // 5 Nov 10:00 Tashkent
+    expect(groupOnDate("g2", t, "2026-11-04")).toBe("g");
+    expect(groupOnDate("g2", t, "2026-11-05")).toBe("g2"); // same day counts as moved (day granularity)
+    expect(groupOnDate("g2", t, "2026-11-06")).toBe("g2");
+    expect(groupOnDate("g", undefined, "2026-01-01")).toBe("g");
+    expect(groupOnDate("g2", [tr("c", null, "g2", "2026-11-05T05:00:00Z")], "2026-11-04")).toBeNull();
+    const two = [tr("c", "g", "g2", "2026-11-05T05:00:00Z"), tr("c", "g2", "g3", "2026-11-08T05:00:00Z")];
+    expect([groupOnDate("g3", two, "2026-11-04"), groupOnDate("g3", two, "2026-11-06"), groupOnDate("g3", two, "2026-11-09")]).toEqual(["g", "g2", "g3"]);
+  });
+
+  it("a student moved to another group appears only in the group they were in on that date", () => {
+    const e = englishData();
+    const students = e.students.map((s) => (s.id === "c" ? { ...s, group_id: "g2" } : s)); // c is in g2 today
+    const transfers = new Map([["c", [tr("c", "g", "g2", "2026-11-05T05:00:00Z")]]]);
+    const base = { date: DATE, students, lessons: e.lessons, plans: e.plans, tasks: e.tasks, assignedSet: e.assigned, assessMap: e.assessMap, coinEvents: e.coinEvents, transfersByStudent: transfers, generatedOn: TODAY };
+    const old = buildEnglishDaily({ ...base, group: { id: "g", name: "Beginner A" } });
+    expect(old.rows.map((r) => r.studentId)).toContain("c"); // on 4 Nov c was still in g
+    const other = buildEnglishDaily({ ...base, group: { id: "g2", name: "Beginner B" } });
+    expect(other.rows.map((r) => r.studentId)).not.toContain("c"); // not in g2 yet
+    const later = buildEnglishDaily({ ...base, date: "2026-11-06", group: { id: "g", name: "Beginner A" } });
+    expect(later.rows.map((r) => r.studentId)).not.toContain("c"); // gone from g after the move
+    // lesson dates follow the same history
+    expect(englishLessonDates("g2", students, e.lessons, e.plans, [], transfers)).toEqual([]);
+    expect(englishLessonDates("g", students, e.lessons, e.plans, [], transfers)).toContain(DATE);
+  });
+
+  it("archived tasks: kept when graded (their assessments and coins still exist), dropped when never graded", () => {
+    const e = englishData();
+    const archivedGraded: HwTask = { ...e.tasks[0], id: "arch", title: "Eski vazifa", position: 9, archived_at: "2026-11-05T00:00:00Z" };
+    const gradedKey = "arch|a";
+    const assessMap = new Map(e.assessMap);
+    assessMap.set(gradedKey, { ...[...e.assessMap.values()][0], task_id: "arch", student_id: "a", status: "full" });
+    const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: [...e.tasks, archivedGraded], assignedSet: new Set([...e.assigned, gradedKey]), assessMap, coinEvents: e.coinEvents, transfersByStudent: new Map(), generatedOn: TODAY });
+    expect(r.tasks.map((t) => [t.id, t.archived])).toEqual([["t1", false], ["t2", false], ["t3", false], ["arch", true]]); // "old" (archived, never graded) is not there
+    const v = buildDailyView(r);
+    expect(v.appendix!.intro!.some((l) => l.includes("[arxivlangan]"))).toBe(true);
+    expect(v.notes.some((n) => n.includes("arxivlangan"))).toBe(true);
+  });
+
+  it("past dates carry an honest note about how the roster was reconstructed; today's report does not", () => {
+    const { students, lesson, rec, group } = subjectData("math", 2);
+    const past = buildDailyView(buildSubjectDaily({ subject: "math", group, date: DATE, students, lessons: [lesson()], records: [rec("s0")], generatedOn: TODAY }));
+    expect(past.notes.some((n) => n.includes("tiklangan"))).toBe(true);
+    const same = buildDailyView(buildSubjectDaily({ subject: "math", group, date: DATE, students, lessons: [lesson()], records: [rec("s0")], generatedOn: DATE }));
+    expect(same.notes.some((n) => n.includes("tiklangan"))).toBe(false);
   });
 });
