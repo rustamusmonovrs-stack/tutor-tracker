@@ -15,13 +15,13 @@ const LINE = rgb(0.62, 0.62, 0.62);
 const HEAD_FILL = rgb(0.92, 0.92, 0.92);
 
 const MM = 72 / 25.4;
-/** Footer portrait: 22 mm wide, height from the image's own aspect ratio. */
-export const FOOTER_PORTRAIT_MM = 22;
-const FOOT_BASE = 16; // distance from the page bottom to the portrait
+/** Header portrait (top right): 24 mm wide, height from the image's own aspect ratio. */
+export const HEADER_PORTRAIT_MM = 24;
+const FOOT_LINE = 34; // the thin footer rule sits this far above the page bottom
 const M = { top: 48, side: 42 };
 
 const BODY = 11;
-const CELL = 10.5;
+const CELL = 11;
 const LEAD = 14;
 const PAD = 5;
 
@@ -29,7 +29,8 @@ const isPng = (b: Uint8Array) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 
 
 /**
  * Real, vector A4 PDF built from the shared DailyView: black text on white, grey rules, an embedded Unicode font,
- * a reserved footer (teacher portrait, name, page numbers) and a table header repeated on every page.
+ * the teacher portrait in the top-right of the header, a minimal footer (brand + page numbers) and a table header
+ * repeated on every page. No summary block: only the lesson details and the tables.
  */
 export async function buildDailyPdf(view: DailyView, assets: DailyPdfAssets): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -43,10 +44,10 @@ export async function buildDailyPdf(view: DailyView, assets: DailyPdfAssets): Pr
 
   const [PW, PH] = view.wide ? [841.89, 595.28] : [595.28, 841.89];
   const contentW = PW - 2 * M.side;
-  const imgW = FOOTER_PORTRAIT_MM * MM;
+  const imgW = HEADER_PORTRAIT_MM * MM;
   const imgH = (imgW * portrait.height) / portrait.width; // aspect ratio preserved
-  const footTop = FOOT_BASE + imgH + 8; // everything above this line is report content
-  const bottom = footTop + 8;
+  const footTop = FOOT_LINE; // everything above this line is report content
+  const bottom = footTop + 12;
 
   const pages: PDFPage[] = [];
   let page: PDFPage;
@@ -101,14 +102,18 @@ export async function buildDailyPdf(view: DailyView, assets: DailyPdfAssets): Pr
     return x + PAD;
   }
 
-  // ---------- first-page header ----------
+  // ---------- first-page header: text on the left, portrait top right, thin black rule below both ----------
   function header() {
+    const top = y;
+    page.drawImage(portrait, { x: PW - M.side - imgW, y: top - imgH, width: imgW, height: imgH });
+    page.drawRectangle({ x: PW - M.side - imgW, y: top - imgH, width: imgW, height: imgH, borderColor: LINE, borderWidth: 0.5 });
     page.drawText(safe(view.brand.toUpperCase()), { x: M.side, y: y - 13, size: 13, font: bold, color: BLACK });
     y -= 20;
     page.drawText(safe(view.pdfTitle), { x: M.side, y: y - 22, size: 22, font: bold, color: BLACK });
     y -= 30;
     page.drawText(safe(`Teacher: ${view.teacher}`), { x: M.side, y: y - 12, size: 12, font: regular, color: BLACK });
     y -= 18;
+    y = Math.min(y, top - imgH) - 8;
     page.drawLine({ start: { x: M.side, y }, end: { x: PW - M.side, y }, thickness: 1.2, color: BLACK });
     y -= 12;
   }
@@ -251,66 +256,19 @@ export async function buildDailyPdf(view: DailyView, assets: DailyPdfAssets): Pr
     y -= 14;
   }
 
-  // ---------- summary: compact two-column list (label left, figure right, small detail underneath) ----------
-  function summary() {
-    const gap = 10;
-    const colW = (contentW - gap) / 2;
-    const valueW = 64;
-    ensure(22 + 40);
-    page.drawText(safe(view.summaryTitle), { x: M.side, y: y - 13, size: 13, font: bold, color: BLACK });
-    y -= 22;
-    const items = view.summary;
-    for (let i = 0; i < items.length; i += 2) {
-      const pair = items.slice(i, i + 2);
-      const boxes = pair.map((it) => ({
-        it,
-        label: wrap(it.label, colW - valueW - 20, regular, 10.5),
-        sub: it.sub ? wrap(it.sub, colW - 16, regular, 9) : [],
-      }));
-      const h = Math.max(...boxes.map((b) => 6 + Math.max(b.label.length * 13, 15) + b.sub.length * 10 + 5));
-      ensure(h + 4);
-      boxes.forEach((b, j) => {
-        const x = M.side + j * (colW + gap);
-        page.drawRectangle({ x, y: y - h, width: colW, height: h, borderColor: LINE, borderWidth: 0.6 });
-        b.label.forEach((ln, li) => page.drawText(ln, { x: x + 8, y: y - 6 - 10.5 - li * 13, size: 10.5, font: regular, color: BLACK }));
-        const v = safe(b.it.value);
-        page.drawText(v, { x: x + colW - 8 - bold.widthOfTextAtSize(v, 12.5), y: y - 6 - 12, size: 12.5, font: bold, color: BLACK });
-        const subTop = y - 6 - Math.max(b.label.length * 13, 15);
-        b.sub.forEach((ln, li) => page.drawText(ln, { x: x + 8, y: subTop - 8 - li * 10, size: 9, font: regular, color: GREY }));
-      });
-      y -= h + 4;
-    }
-    y -= 8;
-    for (const n of view.notes) {
-      for (const ln of wrap(`• ${n}`, contentW, regular, 9)) {
-        ensure(12);
-        page.drawText(ln, { x: M.side, y: y - 9, size: 9, font: regular, color: GREY });
-        y -= 12;
-      }
-      y -= 2;
-    }
-    y -= 10;
-  }
-
   // ---------- document ----------
   newPage(true);
   header();
   details();
   drawTable(view.table);
-  summary();
   if (view.appendix) drawTable(view.appendix, true);
 
-  // ---------- footer on every page (reserved area; the total page count is known now) ----------
+  // ---------- minimal footer on every page: "ARK Education" left, "Sahifa i / n" right ----------
   pages.forEach((p, i) => {
-    p.drawLine({ start: { x: M.side, y: footTop }, end: { x: PW - M.side, y: footTop }, thickness: 0.6, color: LINE });
-    p.drawImage(portrait, { x: M.side, y: FOOT_BASE, width: imgW, height: imgH });
-    p.drawRectangle({ x: M.side, y: FOOT_BASE, width: imgW, height: imgH, borderColor: LINE, borderWidth: 0.5 });
-    const tx = M.side + imgW + 14;
-    p.drawText(safe(`Teacher: ${view.teacher}`), { x: tx, y: FOOT_BASE + imgH - 18, size: 12, font: bold, color: BLACK });
-    p.drawText(safe(view.brand), { x: tx, y: FOOT_BASE + imgH - 34, size: 11, font: regular, color: BLACK });
-    p.drawText(safe(`${view.subjectLabel} · ${view.groupName} · ${view.dateLabel}`.slice(0, 90)), { x: tx, y: FOOT_BASE + imgH - 48, size: 9, font: regular, color: GREY });
+    p.drawLine({ start: { x: M.side, y: footTop }, end: { x: PW - M.side, y: footTop }, thickness: 0.5, color: LINE });
+    p.drawText(safe(view.brand), { x: M.side, y: footTop - 14, size: 9.5, font: regular, color: GREY });
     const label = `Sahifa ${i + 1} / ${pages.length}`;
-    p.drawText(label, { x: PW - M.side - regular.widthOfTextAtSize(label, 10), y: FOOT_BASE + imgH - 18, size: 10, font: regular, color: GREY });
+    p.drawText(label, { x: PW - M.side - regular.widthOfTextAtSize(label, 9.5), y: footTop - 14, size: 9.5, font: regular, color: GREY });
   });
 
   doc.setTitle(`${view.pdfTitle} — ${view.groupName} — ${view.dateLabel}`);

@@ -292,7 +292,7 @@ describe("PDF export", () => {
     return file;
   }
 
-  it("math with a test: real A4 PDF, embedded Unicode font, header, footer portrait, page numbers, no substituted characters", async () => {
+  it("math with a test: real A4 PDF, embedded Unicode font, header with top-right portrait, minimal footer, page numbers, no substituted characters", async () => {
     const { students, lesson, rec, group } = subjectData("math", 6);
     const file = await pdf(
       buildSubjectDaily({
@@ -310,10 +310,14 @@ describe("PDF export", () => {
     expect(imgs).toMatch(/\b480\s+480\b/); // portrait: square, aspect ratio untouched
     expect(imgs).toMatch(/\bgray\b/); // the PDF copy of the photo is grayscale
     const text = pdfText(file);
-    for (const s of ["ARK EDUCATION", "KUNLIK DARS HISOBOTI", "Teacher: Rustam Usmonov", "Fan", "Matematika", "Guruh", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘quvchilar soni", "Sahifa 1 / 1", "Natija", "Dars xulosasi", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
+    for (const s of ["ARK EDUCATION", "KUNLIK DARS HISOBOTI", "Teacher: Rustam Usmonov", "Fan", "Matematika", "Guruh", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘quvchilar soni", "ARK Education", "Sahifa 1 / 1", "Natija", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
       expect(text, s).toContain(s);
     }
     expect(text).not.toContain("?");
+    // removed from the PDF only: no summary block, no explanatory bullets, no photo/teacher card in the footer
+    for (const s of ["Dars xulosasi", "Jami o‘quvchilar", "Kelganlar", "Shu kun uchun jami tanga", "Belgilanmagan davomat «Kelmadi»", "•"]) expect(text, s).not.toContain(s);
+    expect(imgs.trim().split("\n").length - 2).toBe(1); // the portrait appears once (header), never in the footer
+    expect(text.split("Teacher: Rustam Usmonov").length - 1).toBe(1); // header only
   });
 
   it("long names, long topic and a large group paginate: header repeated, footer and numbering on every page, nothing clipped", async () => {
@@ -331,7 +335,7 @@ describe("PDF export", () => {
     expect(n).toBeGreaterThanOrEqual(3);
     const text = pdfText(file);
     for (let p = 1; p <= n; p++) expect(text).toContain(`Sahifa ${p} / ${n}`);
-    expect(execFileSync("pdfimages", ["-list", file]).toString().trim().split("\n").length - 2).toBe(n); // one portrait per page
+    expect(execFileSync("pdfimages", ["-list", file]).toString().trim().split("\n").length - 2).toBe(1); // portrait only on the first page
     // every page that carries student rows repeats the table header
     const tablePages = text.split("\f").filter((pg) => /\b(Keldi|Kelmadi)\b/.test(pg));
     expect(tablePages.length).toBeGreaterThanOrEqual(2);
@@ -345,11 +349,28 @@ describe("PDF export", () => {
     const file = join(outDir, "english.pdf");
     writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait: portraitGray }));
     const text = pdfText(file);
-    for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "Qisman baholangan", "Berilmagan", "Ilova: berilgan vazifalar", "1-vazifa", "Tanga", "Baholanmagan vazifalar"]) {
+    for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "Qisman baholangan", "Berilmagan", "Ilova: berilgan vazifalar", "1-vazifa", "Tanga"]) {
       expect(text, s).toContain(s);
     }
     expect(text).not.toContain("?");
     writeFileSync(join(outDir, "english.html"), renderDailyHtml(buildDailyView(r), portraitDataUri(portrait)));
+  });
+
+  it("6 students and 1 task fit ONE A4 page: no summary, task details kept under the main table, photo top right only", async () => {
+    const names = ["Aliyev Vali", "Karimova Madina", "Qodirov Jasur", "Rahimova Nigora", "Tursunov Sardor", "Yusupova Dilnoza"];
+    const students: Student[] = names.map((name, i) => ({ id: `s${i}`, group_id: "g", name, archived_at: null, created_at: "2026-09-01T05:00:00Z" }));
+    const lessons: Lesson[] = students.map((s, i) => ({ id: `l${i}`, student_id: s.id, topic_id: null, topic_title: "Dars", lesson_date: DATE, attendance: i === 3 ? "absent" : "present", homework: null, created_at: `${DATE}T05:00:00Z` }));
+    const tasks: HwTask[] = [{ id: "t1", group_id: "g", lesson_date: DATE, title: "Workbook p.12 ex. 1-3", due_date: null, position: 1, archived_at: null, created_at: `${DATE}T01:00:00Z` }];
+    const assignedSet = new Set(students.map((s) => `t1|${s.id}`));
+    const ass: Assessment[] = students.slice(0, 5).map((s, i) => ({ task_id: "t1", student_id: s.id, status: i % 2 ? "partial" : "full", coins: i % 2 ? 0 : 1, graded_at: `${DATE}T10:00:00Z`, rewarded_on: i % 2 ? null : DATE, completed_late: false, original_status: null, original_graded_at: null }));
+    const r = buildEnglishDaily({ group: { id: "g", name: "Grop 1 404" }, date: DATE, students, lessons, plans: [{ id: "p", group_id: "g", lesson_date: DATE, topic: "Present Simple", homework: "12-mashq", updated_at: "" }], tasks, assignedSet, assessMap: new Map(ass.map((x) => [`${x.task_id}|${x.student_id}`, x])), coinEvents: taskCoinEvents(ass), transfersByStudent: new Map(), generatedOn: TODAY });
+    const file = join(outDir, "english-6x1.pdf");
+    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait: portraitGray }));
+    expect(pageCount(file)).toBe(1);
+    const text = pdfText(file);
+    for (const s of ["O‘quvchilar jurnali", "Ilova: berilgan vazifalar", "1-vazifa: Workbook p.12 ex. 1-3", "Aliyev Vali", "Yusupova Dilnoza", "ARK Education", "Sahifa 1 / 1", "Tanga"]) expect(text, s).toContain(s);
+    for (const s of ["Dars xulosasi", "Jami o‘quvchilar", "•"]) expect(text, s).not.toContain(s);
+    expect(execFileSync("pdfimages", ["-list", file]).toString().trim().split("\n").length - 2).toBe(1);
   });
 
   it("writes sample HTML files for manual inspection", () => {
