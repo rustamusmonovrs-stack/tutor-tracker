@@ -1,21 +1,24 @@
 import { fmtP, fullDate } from "../subjects/reportTables";
 import { pct } from "../subjects/report";
+import type { IconName } from "./icons";
 import { DAILY_SUBJECT_LABEL, REPORT_TEACHER, type DailyHomework, type DailyReport, type DailyRow, type SmartOverall, type TaskCell } from "./model";
 
 /**
  * Turns a DailyReport into display strings. BOTH the PDF and the HTML render this one view, so the two files can
- * never disagree. The PDF ignores `tone` (it is black-and-white); the HTML uses it for the colour coding.
+ * never disagree. `tone` and `icon` drive the coloured status badges in both files.
  */
 
 export const DAILY_BRAND = "ARK Education";
-export const DAILY_PDF_TITLE = "KUNLIK DARS HISOBOTI";
-export const DAILY_HTML_TITLE = "Daily Lesson Report";
+export const DAILY_PDF_TITLE = "KUNLIK HISOBOT";
+export const DAILY_HTML_TITLE = "KUNLIK HISOBOT";
 
-export type Tone = "ok" | "bad" | "warn" | "muted";
+export type Tone = "ok" | "bad" | "warn" | "muted" | "faint";
 
 export interface Cell {
   text: string;
+  /** Present = rendered as a coloured badge. */
   tone?: Tone;
+  icon?: IconName;
 }
 
 export interface ViewColumn {
@@ -31,6 +34,8 @@ export interface InfoItem {
   value: string;
   /** Long values (the lesson topic) use the full width. */
   wide?: boolean;
+  /** The lesson date: shown in its own prominent block. */
+  kind?: "date";
 }
 
 export interface SummaryItem {
@@ -85,8 +90,10 @@ const OVERALL_LABEL: Record<SmartOverall, string> = {
   ungraded: "Baholanmagan",
   none: "Berilmagan",
 };
-const TASK_TONE: Record<TaskCell, Tone> = { full: "ok", partial: "warn", not_done: "bad", ungraded: "muted", unassigned: "muted" };
-const OVERALL_TONE: Record<SmartOverall, Tone> = { full: "ok", partial: "warn", not_done: "bad", pending: "muted", ungraded: "muted", none: "muted" };
+const TASK_TONE: Record<TaskCell, Tone> = { full: "ok", partial: "warn", not_done: "bad", ungraded: "muted", unassigned: "faint" };
+const OVERALL_TONE: Record<SmartOverall, Tone> = { full: "ok", partial: "warn", not_done: "bad", pending: "muted", ungraded: "muted", none: "faint" };
+const TASK_ICON: Record<TaskCell, IconName> = { full: "check", partial: "clock", not_done: "cross", ungraded: "pending", unassigned: "minus" };
+const OVERALL_ICON: Record<SmartOverall, IconName> = { full: "check", partial: "clock", not_done: "cross", pending: "pending", ungraded: "pending", none: "minus" };
 
 /** Wide tables switch the PDF to landscape beyond this many task columns. */
 export const MAX_PORTRAIT_TASKS = 5;
@@ -97,34 +104,34 @@ export function dailyFileBase(r: DailyReport): string {
 }
 
 function attendanceCell(a: DailyRow["attendance"]): Cell {
-  if (a === "present") return { text: ATT_LABEL.present, tone: "ok" };
-  if (a === "absent") return { text: ATT_LABEL.absent, tone: "bad" };
-  return { text: ATT_LABEL.none, tone: "muted" };
+  if (a === "present") return { text: ATT_LABEL.present, tone: "ok", icon: "check" };
+  if (a === "absent") return { text: ATT_LABEL.absent, tone: "bad", icon: "cross" };
+  return { text: ATT_LABEL.none, tone: "muted", icon: "dash" };
 }
 
 function homeworkCell(h: DailyHomework): Cell {
   if (h.kind === "simple") {
-    if (h.status === "submitted") return { text: SIMPLE_HW_LABEL.submitted, tone: "ok" };
-    if (h.status === "not_submitted") return { text: SIMPLE_HW_LABEL.not_submitted, tone: "bad" };
-    if (h.status === "unchecked") return { text: SIMPLE_HW_LABEL.unchecked, tone: "muted" };
-    return { text: SIMPLE_HW_LABEL.none, tone: "muted" };
+    if (h.status === "submitted") return { text: SIMPLE_HW_LABEL.submitted, tone: "ok", icon: "check" };
+    if (h.status === "not_submitted") return { text: SIMPLE_HW_LABEL.not_submitted, tone: "bad", icon: "cross" };
+    if (h.status === "unchecked") return { text: SIMPLE_HW_LABEL.unchecked, tone: "muted", icon: "pending" };
+    return { text: SIMPLE_HW_LABEL.none, tone: "faint", icon: "minus" };
   }
   if (h.overall === "none") {
     // No Smart Homework task for this student: fall back to the old per-lesson grade if there is one.
-    if (h.legacy) return { text: `${TASK_LABEL[h.legacy]} (umumiy baho)`, tone: TASK_TONE[h.legacy] };
-    return { text: OVERALL_LABEL.none, tone: "muted" };
+    if (h.legacy) return { text: `${TASK_LABEL[h.legacy]} (umumiy baho)`, tone: TASK_TONE[h.legacy], icon: TASK_ICON[h.legacy] };
+    return { text: OVERALL_LABEL.none, tone: "faint", icon: "minus" };
   }
   const progress = `${h.full}/${h.assigned}`;
-  if (h.overall === "ungraded") return { text: `${OVERALL_LABEL.ungraded} · 0/${h.assigned}`, tone: "muted" };
-  if (h.overall === "pending") return { text: `${OVERALL_LABEL.pending} · ${h.graded}/${h.assigned} baholangan, ${progress} to‘liq`, tone: "muted" };
-  return { text: `${OVERALL_LABEL[h.overall]} · ${progress}`, tone: OVERALL_TONE[h.overall] };
+  if (h.overall === "ungraded") return { text: `${OVERALL_LABEL.ungraded} · 0/${h.assigned}`, tone: "muted", icon: "pending" };
+  if (h.overall === "pending") return { text: `${OVERALL_LABEL.pending} · ${h.graded}/${h.assigned}`, tone: "muted", icon: "pending" };
+  return { text: `${OVERALL_LABEL[h.overall]} · ${progress}`, tone: OVERALL_TONE[h.overall], icon: OVERALL_ICON[h.overall] };
 }
 
 function scoreCell(score: number | null, max: number): Cell {
   if (score === null) return { text: "—", tone: "muted" };
   const p = pct(score, max);
   const tone: Tone = p === null ? "muted" : p >= 70 ? "ok" : p >= 40 ? "warn" : "bad";
-  return { text: `${score}/${max} · ${fmtP(p)}`, tone };
+  return { text: `${score}/${max} • ${fmtP(p)}`, tone };
 }
 
 const frac = (n: number, d: number) => (d === 0 ? "—" : `${n}/${d}`);
@@ -138,7 +145,7 @@ export function buildDailyView(r: DailyReport): DailyView {
   const info: InfoItem[] = [
     { label: "Fan", value: subjectLabel },
     { label: "Guruh", value: r.groupName },
-    { label: "Sana", value: dateLabel },
+    { label: "Sana", value: dateLabel, kind: "date" },
     { label: "O‘quvchilar soni", value: String(r.rows.length) },
     { label: "Mavzu", value: r.topic ?? "Kiritilmagan", wide: true },
   ];
@@ -148,9 +155,9 @@ export function buildDailyView(r: DailyReport): DailyView {
   // ---- main table ---------------------------------------------------------------------------
   const columns: ViewColumn[] = [
     { header: "№", align: "center", weight: 6 },
-    { header: "O‘quvchi F.I.Sh.", align: "left", weight: 34 },
+    { header: "O‘quvchi F.I.Sh.", align: "left", weight: smart ? 28 : 34 },
     { header: "Davomat", align: "left", weight: 15 },
-    { header: "Uy vazifasi", align: "left", weight: smart ? 28 : 18 },
+    { header: "Uy vazifasi", align: "left", weight: smart ? 33 : 18 },
   ];
   if (r.test) columns.push({ header: "Natija", sub: `/ ${r.test.max}`, align: "left", weight: 16 });
   if (smart) columns.push({ header: "Tanga", align: "center", weight: 9 });
@@ -218,7 +225,7 @@ export function buildDailyView(r: DailyReport): DailyView {
       rows: r.rows.map((row, i) => [
         { text: String(i + 1) },
         { text: row.name },
-        ...(row.homework.kind === "smart" ? row.homework.tasks : []).map((c): Cell => ({ text: TASK_LABEL[c], tone: TASK_TONE[c] })),
+        ...(row.homework.kind === "smart" ? row.homework.tasks : []).map((c): Cell => ({ text: TASK_LABEL[c], tone: TASK_TONE[c], icon: TASK_ICON[c] })),
       ]),
     };
   }

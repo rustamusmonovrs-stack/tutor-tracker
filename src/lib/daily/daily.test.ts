@@ -19,7 +19,6 @@ const fonts = {
   bold: new Uint8Array(readFileSync("public/fonts/DejaVuSans-Bold.ttf")),
 };
 const portrait = new Uint8Array(readFileSync("public/brand/teacher-rustam-usmonov.jpg"));
-const portraitGray = new Uint8Array(readFileSync("public/brand/teacher-rustam-usmonov-gray.jpg"));
 const outDir = process.env.REPORT_OUT ?? mkdtempSync(join(tmpdir(), "daily-"));
 const pdfText = (f: string) => execFileSync("pdftotext", ["-layout", f, "-"]).toString();
 const pageCount = (f: string) => Number(/Pages:\s+(\d+)/.exec(execFileSync("pdfinfo", [f]).toString())![1]);
@@ -82,7 +81,7 @@ describe("subject daily report (Matematika / Tarix)", () => {
     const natija = v.table.columns.findIndex((c) => c.header === "Natija");
     const cell = (i: number) => v.table.rows[i][natija].text;
     const byName = (n: string) => withTest.rows.findIndex((x) => x.name === n);
-    expect(cell(byName(students[0].name))).toBe("0/20 · 0%"); // genuine zero
+    expect(cell(byName(students[0].name))).toBe("0/20 • 0%"); // genuine zero
     expect(cell(byName(students[3].name))).toBe("—"); // missing
     expect(v.info.some((i) => i.label === "Test")).toBe(true);
 
@@ -261,9 +260,9 @@ describe("HTML export", () => {
     expect(html).not.toMatch(/(src|href)\s*=\s*["']?https?:/i);
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toMatch(/@import|url\(\s*["']?https?:/i);
-    expect(html).toMatch(/<img src="data:image\/jpeg;base64,[A-Za-z0-9+/=]{1000,}"/);
+    expect(html).toMatch(/<img class="portrait" src="data:image\/jpeg;base64,[A-Za-z0-9+/=]{1000,}"/);
     expect(html).toContain("Chop etish");
-    expect(html).toContain("Daily Lesson Report");
+    expect(html).toContain("KUNLIK HISOBOT");
     expect(html).toContain("Teacher: Rustam Usmonov");
     expect(html).toContain("@media print");
     expect(html).toContain('<html lang="uz">');
@@ -279,14 +278,14 @@ describe("HTML export", () => {
 
   it("keeps Uzbek Unicode and shows the zero score as a score", () => {
     expect(html).toContain("O‘quvchi F.I.Sh.");
-    expect(html).toContain("0/20 · 0%");
+    expect(html).toContain("0/20 • 0%");
     expect(html).toContain("Oʻtkir Gʻaniyev");
   });
 });
 
 describe("PDF export", () => {
   async function pdf(report: ReturnType<typeof buildSubjectDaily>, name: string) {
-    const bytes = await buildDailyPdf(buildDailyView(report), { fonts, portrait: portraitGray });
+    const bytes = await buildDailyPdf(buildDailyView(report), { fonts, portrait });
     const file = join(outDir, `${name}.pdf`);
     writeFileSync(file, bytes);
     return file;
@@ -308,14 +307,15 @@ describe("PDF export", () => {
     expect(execFileSync("pdffonts", [file]).toString()).toMatch(/DejaVu/);
     const imgs = execFileSync("pdfimages", ["-list", file]).toString();
     expect(imgs).toMatch(/\b480\s+480\b/); // portrait: square, aspect ratio untouched
-    expect(imgs).toMatch(/\bgray\b/); // the PDF copy of the photo is grayscale
+    expect(imgs).toMatch(/\brgb\b/); // the original colour portrait, not a recoloured copy
     const text = pdfText(file);
-    for (const s of ["ARK EDUCATION", "KUNLIK DARS HISOBOTI", "Teacher: Rustam Usmonov", "Fan", "Matematika", "Guruh", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘quvchilar soni", "ARK Education", "Sahifa 1 / 1", "Natija", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
+    for (const s of ["KUNLIK HISOBOT", "Teacher: Rustam Usmonov", "FAN", "Matematika", "GURUH", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘QUVCHILAR SONI", "ARK Education", "Sahifa 1 / 1", "Natija", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
       expect(text, s).toContain(s);
     }
     expect(text).not.toContain("?");
     // removed from the PDF only: no summary block, no explanatory bullets, no photo/teacher card in the footer
-    for (const s of ["Dars xulosasi", "Jami o‘quvchilar", "Kelganlar", "Shu kun uchun jami tanga", "Belgilanmagan davomat «Kelmadi»", "•"]) expect(text, s).not.toContain(s);
+    for (const s of ["ARK EDUCATION", "KUNLIK DARS", "Dars xulosasi", "Jami o‘quvchilar", "Kelganlar", "Shu kun uchun jami tanga", "Belgilanmagan davomat «Kelmadi»"]) expect(text, s).not.toContain(s);
+    expect(text).not.toMatch(/^\s*•\s/m); // score separators ("18/20 • 90%") are fine; bullet-point notes are not
     expect(imgs.trim().split("\n").length - 2).toBe(1); // the portrait appears once (header), never in the footer
     expect(text.split("Teacher: Rustam Usmonov").length - 1).toBe(1); // header only
   });
@@ -347,7 +347,7 @@ describe("PDF export", () => {
     const e = englishData();
     const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: e.tasks, assignedSet: e.assigned, assessMap: e.assessMap, coinEvents: e.coinEvents, transfersByStudent: new Map(), generatedOn: TODAY });
     const file = join(outDir, "english.pdf");
-    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait: portraitGray }));
+    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
     const text = pdfText(file);
     for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "Qisman baholangan", "Berilmagan", "Ilova: berilgan vazifalar", "1-vazifa", "Tanga"]) {
       expect(text, s).toContain(s);
@@ -365,11 +365,11 @@ describe("PDF export", () => {
     const ass: Assessment[] = students.slice(0, 5).map((s, i) => ({ task_id: "t1", student_id: s.id, status: i % 2 ? "partial" : "full", coins: i % 2 ? 0 : 1, graded_at: `${DATE}T10:00:00Z`, rewarded_on: i % 2 ? null : DATE, completed_late: false, original_status: null, original_graded_at: null }));
     const r = buildEnglishDaily({ group: { id: "g", name: "Grop 1 404" }, date: DATE, students, lessons, plans: [{ id: "p", group_id: "g", lesson_date: DATE, topic: "Present Simple", homework: "12-mashq", updated_at: "" }], tasks, assignedSet, assessMap: new Map(ass.map((x) => [`${x.task_id}|${x.student_id}`, x])), coinEvents: taskCoinEvents(ass), transfersByStudent: new Map(), generatedOn: TODAY });
     const file = join(outDir, "english-6x1.pdf");
-    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait: portraitGray }));
+    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
     expect(pageCount(file)).toBe(1);
     const text = pdfText(file);
-    for (const s of ["O‘quvchilar jurnali", "Ilova: berilgan vazifalar", "1-vazifa: Workbook p.12 ex. 1-3", "Aliyev Vali", "Yusupova Dilnoza", "ARK Education", "Sahifa 1 / 1", "Tanga"]) expect(text, s).toContain(s);
-    for (const s of ["Dars xulosasi", "Jami o‘quvchilar", "•"]) expect(text, s).not.toContain(s);
+    for (const s of ["O‘quvchilar jurnali", "Ilova: berilgan vazifalar", "1-vazifa", "Workbook p.12 ex. 1-3", "Aliyev Vali", "Yusupova Dilnoza", "ARK Education", "Sahifa 1 / 1", "Tanga"]) expect(text, s).toContain(s);
+    for (const s of ["Dars xulosasi", "Jami o‘quvchilar"]) expect(text, s).not.toContain(s);
     expect(execFileSync("pdfimages", ["-list", file]).toString().trim().split("\n").length - 2).toBe(1);
   });
 
