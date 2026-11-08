@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ATTENDANCE_META, ATTENDANCE_ORDER, HOMEWORK_META, HOMEWORK_ORDER } from "@/lib/config";
 import { useData } from "@/lib/data";
 import type { Attendance, Homework } from "@/lib/types";
-import { IconAbsent, IconCheck, IconHwFull, IconHwNone, IconHwPartial, IconPresent } from "./icons";
+import { IconCheck, IconClose, IconHwFull, IconHwNone, IconHwPartial } from "./icons";
 
 /** "Saqlanmoqda…" while writes are in flight, "Saqlandi" briefly after the last one succeeds. */
 export function SaveChip() {
@@ -36,7 +36,7 @@ export function SaveChip() {
 }
 
 const HW_ICONS = { full: IconHwFull, partial: IconHwPartial, not_done: IconHwNone } as const;
-const ATT_ICONS = { present: IconPresent, absent: IconAbsent } as const;
+const ATT_ICONS = { present: IconCheck, absent: IconClose } as const;
 
 /** Attendance buttons. Pressing the active one clears it (back to "belgilanmagan"). */
 export function AttendanceMarks({
@@ -51,7 +51,7 @@ export function AttendanceMarks({
   onChange: (next: Attendance | null) => void;
 }) {
   return (
-    <div className="marks" role="group" aria-label={`Davomat: ${name}`}>
+    <div className="marks marks--att" role="group" aria-label={`Davomat: ${name}${value === null ? " — belgilanmagan" : ""}`} data-state={value ?? "none"}>
       {ATTENDANCE_ORDER.map((a) => {
         const Icon = ATT_ICONS[a];
         return (
@@ -226,5 +226,39 @@ export function FormDialog({
         </div>
       </form>
     </dialog>
+  );
+}
+
+export type TileTone = "brand" | "ok" | "bad" | "neutral";
+
+/** Compact summary tile (icon, label, value, one short note). Used by the daily journals of all subjects. */
+export function SummaryTile({
+  icon,
+  label,
+  value,
+  note,
+  tone = "neutral",
+  meter,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  note?: ReactNode;
+  tone?: TileTone;
+  /** Optional progress bar under the value. */
+  meter?: { value: number; max: number };
+}) {
+  return (
+    <div className={`tile tile--${tone}`}>
+      <span className="tile__icon" aria-hidden>
+        {icon}
+      </span>
+      <div className="tile__body">
+        <span className="tile__label">{label}</span>
+        <span className="tile__value">{value}</span>
+        {note && <span className="tile__note">{note}</span>}
+        {meter && meter.max > 0 && <Meter value={meter.value} max={meter.max} tone={tone === "ok" ? "ok" : undefined} />}
+      </div>
+    </div>
   );
 }

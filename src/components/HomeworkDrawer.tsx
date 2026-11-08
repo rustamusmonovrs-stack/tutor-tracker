@@ -5,8 +5,8 @@ import { Avatar } from "@/components/Avatar";
 import { StatusPicker } from "@/components/HomeworkParts";
 import { IconClose, IconCoin } from "@/components/icons";
 import { HOMEWORK_META } from "@/lib/config";
-import { formatDay } from "@/lib/dates";
-import { studentProgress, TASK_STATUS_LABEL } from "@/lib/homework";
+import { formatDay, formatShort } from "@/lib/dates";
+import { lessonCheckTasks, studentProgress, TASK_STATUS_LABEL, type HwTask } from "@/lib/homework";
 import { useHomework } from "@/lib/homeworkData";
 import type { Group, Homework, Student } from "@/lib/types";
 
@@ -16,6 +16,7 @@ export function HomeworkDrawer({
   group,
   date,
   legacy,
+  tasks: taskList,
   onClose,
 }: {
   student: Student | null;
@@ -23,6 +24,8 @@ export function HomeworkDrawer({
   date: string;
   /** Old-style single grade stored on the lesson (read-only here). */
   legacy: Homework | null;
+  /** The tasks checked in this lesson (same set the Bugun page counts). Defaults to the lesson's own check list. */
+  tasks?: HwTask[];
   onClose: () => void;
 }) {
   const hw = useHomework();
@@ -35,7 +38,7 @@ export function HomeworkDrawer({
     if (!open && d.open) d.close();
   }, [open]);
 
-  const tasks = hw.tasksFor(group.id, date);
+  const tasks = taskList ?? lessonCheckTasks(hw.tasks, group.id, date);
   const ids = tasks.map((t) => t.id);
   const pr = student ? studentProgress(ids, student.id, hw.assignedSet, hw.assessMap) : null;
 
@@ -43,7 +46,7 @@ export function HomeworkDrawer({
     <dialog
       ref={ref}
       className="drawer"
-      aria-label="O'quvchi uy vazifalari"
+      aria-label="O'quvchi vazifalari"
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -73,7 +76,7 @@ export function HomeworkDrawer({
               <span className="hint"> bajarilgan</span>
             </div>
             <div className="drawer__counts">
-              <span>Berilgan {pr.assigned}</span>
+              <span>Biriktirilgan {pr.assigned}</span>
               <span>Baholanmagan {pr.ungraded}</span>
               <span>Chala {pr.partial}</span>
               <span>Qilmadi {pr.notDone}</span>
@@ -91,18 +94,21 @@ export function HomeworkDrawer({
           )}
 
           {tasks.length === 0 ? (
-            <p className="hwt__empty">Bu kunga vazifa qo&apos;shilmagan.</p>
+            <p className="hwt__empty">Bu dars uchun vazifa yo&apos;q.</p>
           ) : (
             <ul className="drawer__tasks">
               {tasks.map((t) => {
                 const k = `${t.id}|${student.id}`;
                 const assigned = hw.assignedSet.has(k);
                 const a = hw.assessMap.get(k);
-                const state = !assigned ? "Berilmagan" : a ? TASK_STATUS_LABEL[a.status] : "Baholanmagan";
+                const state = !assigned ? "Biriktirilmagan" : a ? TASK_STATUS_LABEL[a.status] : "Baholanmagan";
                 return (
                   <li key={t.id} className="drawer__task" data-state={!assigned ? "none" : (a?.status ?? "pending")}>
                     <div className="drawer__tt">
-                      <span className="hwt__title">{t.title}</span>
+                      <span className="hwt__title">
+                        {t.title}
+                        <small className="drawer__date"> · berilgan {formatShort(t.lesson_date)}</small>
+                      </span>
                       <span className="drawer__state">
                         {state}
                         {a?.status === "full" && (
@@ -131,7 +137,7 @@ export function HomeworkDrawer({
                     ) : (
                       <div className="drawer__ctl">
                         <button className="btn btn--sm" onClick={() => void hw.assign(t.id, [student.id])}>
-                          Bu o&apos;quvchiga berish
+                          Bu o&apos;quvchiga biriktirish
                         </button>
                       </div>
                     )}

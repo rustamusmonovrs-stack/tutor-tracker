@@ -6,12 +6,14 @@ import { Avatar } from "@/components/Avatar";
 import { HomeworkDrawer } from "@/components/HomeworkDrawer";
 import { ProgressButton } from "@/components/HomeworkParts";
 import { HomeworkTasks } from "@/components/HomeworkTasks";
-import { IconChevronLeft, IconChevronRight, IconCoin, IconAlert, IconBook, IconHistory, IconPresent, IconWatch } from "@/components/icons";
-import { AttendanceMarks, Meter, SaveChip } from "@/components/ui";
+import { GroupSwitcher } from "@/components/GroupSwitcher";
+import { IconChevronLeft, IconChevronRight, IconCoin, IconAlert, IconBook, IconCheck, IconClose, IconHistory, IconPresent, IconTask, IconUsers, IconWatch } from "@/components/icons";
+import { AttendanceMarks, SaveChip, SummaryTile } from "@/components/ui";
 import { DailyReportCard } from "@/components/DailyReportCard";
 import { buildEnglishDaily, englishLessonDates } from "@/lib/daily/build";
 import { HOMEWORK_META } from "@/lib/config";
-import { studentProgress } from "@/lib/homework";
+import { blockerLines, groupDeleteBlockers } from "@/lib/groups";
+import { lessonCheckTasks, studentProgress } from "@/lib/homework";
 import { useHomework } from "@/lib/homeworkData";
 import { useStages } from "@/lib/stagesData";
 import { useData, type PlanPatch } from "@/lib/data";
@@ -25,6 +27,7 @@ const PLAN_DEBOUNCE_MS = 800;
 export default function TodayPage() {
   const data = useData();
   const {
+    groups,
     activeGroups,
     activeStudents,
     students: allStudents,
@@ -36,9 +39,13 @@ export default function TodayPage() {
     markAttendanceBulk,
     savePlan,
     isSaving,
+    renameGroup,
+    setGroupArchived,
+    deleteGroup,
   } = data;
   const hw = useHomework();
-  const { transfersByStudent } = useStages();
+  const stages = useStages();
+  const { transfersByStudent } = stages;
   const [drawerFor, setDrawerFor] = useState<Student | null>(null);
 
   const today = todayISO();
@@ -136,7 +143,8 @@ export default function TodayPage() {
   const weekFrom = weekStart(date);
   const weekTo = addDays(weekFrom, 6);
 
-  const dayTasks = useMemo(() => (group ? hw.tasksFor(group.id, date) : []), [hw, group, date]);
+  // Tasks checked in this lesson: entered here, plus earlier-given ones whose stored checking date is this lesson.
+  const dayTasks = useMemo(() => (group ? lessonCheckTasks(hw.tasks, group.id, date) : []), [hw.tasks, group, date]);
   const dayTaskIds = useMemo(() => dayTasks.map((t) => t.id), [dayTasks]);
 
   const rows = roster.map((student) => {
@@ -160,12 +168,15 @@ export default function TodayPage() {
 
   const attMarked = rows.filter((r) => r.existing?.attendance).length;
   const present = rows.filter((r) => r.existing?.attendance === "present").length;
+  const absent = rows.filter((r) => r.existing?.attendance === "absent").length;
   // With structured tasks: graded / assigned task slots. Without: the old per-lesson grade counts.
   const hwSlots = rows.reduce((n, r) => n + r.progress.assigned, 0);
   const hwDone = rows.reduce((n, r) => n + r.progress.graded, 0);
   const legacyGraded = rows.filter((r) => r.existing?.homework).length;
   const hwGraded = dayTasks.length ? hwDone : legacyGraded;
   const hwTarget = dayTasks.length ? hwSlots : Math.max(present, legacyGraded);
+  // Same numbers as before; only the empty case (no tasks and no old-format grades) is shown as a neutral dash, not "0/N".
+  const hasHwWork = dayTasks.length > 0 || legacyGraded > 0;
 
   function createArgs(row: (typeof rows)[number]) {
     return {
@@ -180,12 +191,47 @@ export default function TodayPage() {
 
   const unmarked: Student[] = rows.filter((r) => !r.existing).map((r) => r.student);
 
+  // Permanent group deletion is only offered for a group with no history at all (see lib/groups.ts).
+  const factsReady = stages.status === "ready" && hw.status === "ready";
+  const transferList = useMemo(() => [...transfersByStudent.values()].flat(), [transfersByStudent]);
+  const stintList = useMemo(() => [...stages.stintsByStudent.values()].flat(), [stages.stintsByStudent]);
+  const deleteBlockers = (id: string) =>
+    !factsReady
+      ? ["Ma'lumotlar hali to'liq yuklanmadi"]
+      : blockerLines(
+          groupDeleteBlockers({
+            groupId: id,
+            students: allStudents,
+            lessonPlans: plans,
+            tasks: hw.tasks,
+            watchCases: hw.cases,
+            saturdayPlans: stages.plans,
+            transfers: transferList,
+            stints: stintList,
+          }),
+        );
+  const switcher = (value: string | null) => (
+    <GroupSwitcher
+      groups={groups}
+      value={value}
+      onChange={setGroupId}
+      studentCount={(id) => activeStudents.filter((s) => s.group_id === id).length}
+      onRename={renameGroup}
+      onArchive={(id) => setGroupArchived(id, true)}
+      onRestore={(id) => setGroupArchived(id, false)}
+      onDelete={deleteGroup}
+      deleteBlockers={deleteBlockers}
+      archiveKeeps="Arxivlash faqat guruhni yashiradi: o'quvchilar, davomat, vazifa baholari, tangalar, reyting, mock natijalari va hisobotlar o'zgarmaydi."
+    />
+  );
+
   if (!activeGroups.length) {
     return (
       <>
         <div className="page-head">
           <h1 className="page-title">Bugun</h1>
         </div>
+        {groups.length > 0 && <div style={{ marginBottom: 12 }}>{switcher(null)}</div>}
         <div className="card empty">
           <strong>Hali guruh yo&apos;q</strong>
           <p>Avval guruh va o&apos;quvchilarni qo&apos;shing, keyin davomat bir bosishda belgilanadi.</p>
@@ -223,21 +269,10 @@ export default function TodayPage() {
         </div>
       </div>
 
-      <div className="seg" role="tablist" aria-label="Guruhlar" style={{ marginBottom: 12 }}>
-        {activeGroups.map((g) => (
-          <button
-            key={g.id}
-            role="tab"
-            className="seg__btn"
-            aria-selected={g.id === group?.id}
-            onClick={() => setGroupId(g.id)}
-          >
-            {g.name}
-          </button>
-        ))}
-      </div>
+      <div style={{ marginBottom: 12 }}>{switcher(group?.id ?? null)}</div>
 
-      <div className="card" style={{ marginBottom: 12 }}>
+      <div className="today-top">
+      <div className="card plan-card">
         <div className="plan">
           <div className="plan__head">
             <span className="plan__title">
@@ -292,38 +327,39 @@ export default function TodayPage() {
             </details>
           )}
         </div>
-        {group && (
-          <HomeworkTasks
-            group={group}
-            date={date}
-            roster={roster}
-            legacyText={plan?.homework ?? null}
+      </div>
+      {group && (
+        <div className="card hwt-card">
+          <HomeworkTasks group={group} date={date} roster={roster} legacyText={plan?.homework ?? null} />
+        </div>
+      )}
+      {rows.length > 0 && (
+        <div className="tiles today-tiles" role="group" aria-label="Kunlik ko'rsatkichlar">
+          <SummaryTile icon={<IconUsers />} label="Jami o'quvchilar" value={rows.length} tone="brand" />
+          <SummaryTile
+            icon={<IconCheck />}
+            label="Kelganlar"
+            value={present}
+            tone="ok"
+            note={`${attMarked}/${rows.length} belgilangan`}
           />
-        )}
-        {rows.length > 0 && (
-          <div className="progress-strip" style={{ borderTop: "1px solid var(--line)" }}>
-            <div className="progress-strip__item">
-              <div className="progress-strip__head">
-                <span>Davomat</span>
-                <strong>
-                  {attMarked}
-                  <small>/{rows.length}</small>
-                </strong>
-              </div>
-              <Meter value={attMarked} max={rows.length} />
-            </div>
-            <div className="progress-strip__item">
-              <div className="progress-strip__head">
-                <span>Vazifa baholandi</span>
-                <strong>
-                  {hwGraded}
-                  <small>/{hwTarget}</small>
-                </strong>
-              </div>
-              <Meter value={hwGraded} max={hwTarget} tone="ok" />
-            </div>
-          </div>
-        )}
+          <SummaryTile
+            icon={<IconClose />}
+            label="Kelmaganlar"
+            value={absent}
+            tone="bad"
+            note={rows.length - attMarked > 0 ? `${rows.length - attMarked} ta belgilanmagan` : undefined}
+          />
+          <SummaryTile
+            icon={<IconTask />}
+            label="Vazifalar tekshiruvi"
+            value={hasHwWork && hwTarget > 0 ? `${hwGraded}/${hwTarget}` : "—"}
+            tone="neutral"
+            note={hasHwWork && hwTarget > 0 ? "baholandi" : "Tekshiriladigan vazifa yo'q"}
+            meter={hasHwWork ? { value: hwGraded, max: hwTarget } : undefined}
+          />
+        </div>
+      )}
       </div>
 
       <div className="card">
@@ -349,9 +385,9 @@ export default function TodayPage() {
                   </button>
                 )}
               </span>
-              <span>Vazifalar</span>
+              <span>Vazifa holati</span>
               <span>Tanga</span>
-              <span className="sr-only">Amallar</span>
+              <span className="roster__act-head">Amallar</span>
             </div>
             <ul className="roster">
               {rows.map((row) => {
@@ -437,7 +473,7 @@ export default function TodayPage() {
         />
       )}
 
-      {group && <HomeworkDrawer student={drawerFor} group={group} date={date} legacy={drawerFor ? (rows.find((r) => r.student.id === drawerFor.id)?.existing?.homework ?? null) : null} onClose={() => setDrawerFor(null)} />}
+      {group && <HomeworkDrawer student={drawerFor} group={group} date={date} legacy={drawerFor ? (rows.find((r) => r.student.id === drawerFor.id)?.existing?.homework ?? null) : null} tasks={dayTasks} onClose={() => setDrawerFor(null)} />}
     </>
   );
 }

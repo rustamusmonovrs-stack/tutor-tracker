@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { IconBook, IconChevronLeft, IconChevronRight, IconPresent } from "@/components/icons";
-import { Meter } from "@/components/ui";
+import { GroupSwitcher } from "@/components/GroupSwitcher";
+import { IconBook, IconCheck, IconChevronLeft, IconChevronRight, IconClose, IconPresent, IconTask, IconUsers } from "@/components/icons";
+import { SummaryTile } from "@/components/ui";
 import { ATTENDANCE_META } from "@/lib/config";
 import { addDays, formatDay, todayISO } from "@/lib/dates";
 import { DailyReportCard } from "@/components/DailyReportCard";
@@ -12,13 +13,13 @@ import { buildSubjectDaily, subjectLessonDates } from "@/lib/daily/build";
 import { useSubjectScope } from "@/lib/subjects/data";
 import { SUBJECTS, type SubjectHomework, type SubjectLesson, type SubjectRecord } from "@/lib/subjects/types";
 import { pct } from "@/lib/subjects/report";
-import { GroupTabs, HW_LABEL, NoGroups, SubjectSaveChip, fmtPct, useStoredGroup } from "./shared";
+import { HW_LABEL, NoGroups, SubjectSaveChip, fmtPct, useStoredGroup } from "./shared";
 
 const HW_ORDER: SubjectHomework[] = ["submitted", "not_submitted", "unchecked"];
 
 /** Daily journal shared by Matematika and Tarix. Each subject sees only its own groups and records. */
 export function SubjectJournal() {
-  const { subject, api, activeGroups, activeStudents, students, lessons, records } = useSubjectScope();
+  const { subject, api, groups, activeGroups, activeStudents, students, lessons, records } = useSubjectScope();
   const today = todayISO();
   const [date, setDate] = useState(today);
   const [group, pickGroup] = useStoredGroup(subject, activeGroups);
@@ -31,10 +32,25 @@ export function SubjectJournal() {
   const recOf = (studentId: string): SubjectRecord | null =>
     lesson ? records.find((r) => r.lesson_id === lesson.id && r.student_id === studentId) ?? null : null;
 
+  const switcher = (value: string | null) => (
+    <GroupSwitcher
+      groups={groups}
+      value={value}
+      onChange={pickGroup}
+      studentCount={(id) => activeStudents.filter((s) => s.group_id === id).length}
+      onRename={api.renameGroup}
+      onArchive={(id) => api.setGroupArchived(id, true)}
+      onRestore={(id) => api.setGroupArchived(id, false)}
+      deleteUnsupported={`${SUBJECTS[subject].label} guruhlarini doimiy o'chirib bo'lmaydi: davomat, vazifa va test tarixi saqlanishi kerak.`}
+      archiveKeeps="Arxivlash faqat guruhni yashiradi: o'quvchilar, davomat, vazifa holatlari, test ballari va hisobotlar saqlanadi."
+    />
+  );
+
   if (!group) {
     return (
       <>
         <div className="page-head"><h1 className="page-title">Bugun</h1></div>
+        {groups.length > 0 && <div style={{ marginBottom: 12 }}>{switcher(null)}</div>}
         <NoGroups subject={subject} />
       </>
     );
@@ -46,6 +62,8 @@ export function SubjectJournal() {
     const h = recOf(s.id)?.homework;
     return h === "submitted" || h === "not_submitted";
   }).length;
+  const present = roster.filter((s) => recOf(s.id)?.attendance === "present").length;
+  const absent = roster.filter((s) => recOf(s.id)?.attendance === "absent").length;
   const unmarked = roster.filter((s) => recOf(s.id)?.attendance == null);
   const showScore = Boolean(lesson?.has_test && lesson.test_max != null);
 
@@ -66,21 +84,21 @@ export function SubjectJournal() {
         </div>
       </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <GroupTabs groups={activeGroups} value={group.id} onChange={pickGroup} />
-      </div>
+      <div style={{ marginBottom: 12 }}>{switcher(group.id)}</div>
 
       <LessonInfo key={`${group.id}|${date}`} subject={subject} groupId={group.id} date={date} lesson={lesson} records={records} />
 
-      <div className="card sj-summary">
-        <div>
-          <div className="sj-summary__row"><span>Davomat</span><span><b>{marked}</b>/{roster.length}</span></div>
-          <Meter value={marked} max={Math.max(roster.length, 1)} />
-        </div>
-        <div>
-          <div className="sj-summary__row"><span>Vazifa topshirdi</span><span><b>{submitted}</b>/{assessed}</span></div>
-          <Meter value={submitted} max={Math.max(assessed, 1)} tone="ok" />
-        </div>
+      <div className="tiles" role="group" aria-label="Kunlik ko'rsatkichlar">
+        <SummaryTile icon={<IconUsers />} label="Jami o'quvchilar" value={roster.length} tone="brand" />
+        <SummaryTile icon={<IconCheck />} label="Kelganlar" value={present} tone="ok" note={`${marked}/${roster.length} belgilangan`} />
+        <SummaryTile icon={<IconClose />} label="Kelmaganlar" value={absent} tone="bad" note={roster.length - marked > 0 ? `${roster.length - marked} ta belgilanmagan` : undefined} />
+        <SummaryTile
+          icon={<IconTask />}
+          label="Vazifalar tekshiruvi"
+          value={assessed > 0 ? `${submitted}/${assessed}` : "—"}
+          note={assessed > 0 ? "topshirdi (baholanganlardan)" : "Baholangan vazifa yo'q"}
+          meter={{ value: submitted, max: assessed }}
+        />
       </div>
 
       <div className="card">
@@ -98,7 +116,7 @@ export function SubjectJournal() {
                   </button>
                 )}
               </span>
-              <span role="columnheader">Uy vazifasi</span>
+              <span role="columnheader">Vazifa holati</span>
               {showScore && <span role="columnheader">Test balli</span>}
             </div>
             {roster.map((s) => {

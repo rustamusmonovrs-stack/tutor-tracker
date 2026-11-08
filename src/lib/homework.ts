@@ -186,3 +186,68 @@ export function evaluateWatch(
   const same = ids.length === active.task_ids.length && ids.every((x) => active.task_ids.includes(x));
   return same ? { kind: "none" } : { kind: "update", taskIds: ids };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Which tasks are checked in a lesson (Bugun → "Berilgan vazifalar").
+//
+// Stored dates: `lesson_date` = the lesson the task was given/entered under, `due_date` = optional deadline, which
+// the journal treats as the checking date. Nothing is inferred: a task entered earlier belongs to this lesson only
+// when its stored `due_date` is this lesson's date. Tasks entered at this lesson always belong to it.
+
+/** Active tasks checked in the lesson of `date`: earlier-given ones due on `date` first, then those entered at this lesson. */
+export function lessonCheckTasks(tasks: HwTask[], groupId: string, date: string): HwTask[] {
+  return tasks
+    .filter((t) => t.group_id === groupId && !t.archived_at && (t.lesson_date === date || (t.lesson_date < date && t.due_date === date)))
+    .sort(
+      (a, b) =>
+        (a.lesson_date < b.lesson_date ? -1 : a.lesson_date > b.lesson_date ? 1 : 0) ||
+        a.position - b.position ||
+        (a.created_at < b.created_at ? -1 : 1),
+    );
+}
+
+export interface TaskCounts {
+  /** Students of the roster this task is assigned to. */
+  assigned: number;
+  /** Of those, how many have a grade (To'liq / Chala / Qilmadi). */
+  graded: number;
+  /** Assigned but not graded yet. */
+  pending: number;
+}
+
+/** Per-task counts over the given students only. Unassigned students are in neither number. */
+export function taskCounts(taskId: string, studentIds: string[], assigned: Set<string>, assess: Map<string, Assessment>): TaskCounts {
+  let a = 0;
+  let g = 0;
+  for (const s of studentIds) {
+    if (!assigned.has(`${taskId}|${s}`)) continue;
+    a += 1;
+    if (assess.has(`${taskId}|${s}`)) g += 1;
+  }
+  return { assigned: a, graded: g, pending: a - g };
+}
+
+/**
+ * Tasks entered at an earlier lesson that still have ungraded assigned students and are not already checked in this
+ * lesson. The teacher may pull one into this lesson explicitly (its due date becomes this lesson's date); nothing is
+ * moved automatically. Most recently given first.
+ */
+export function earlierOpenTasks(
+  tasks: HwTask[],
+  groupId: string,
+  date: string,
+  studentIds: string[],
+  assigned: Set<string>,
+  assess: Map<string, Assessment>,
+): HwTask[] {
+  return tasks
+    .filter(
+      (t) =>
+        t.group_id === groupId &&
+        !t.archived_at &&
+        t.lesson_date < date &&
+        t.due_date !== date &&
+        taskCounts(t.id, studentIds, assigned, assess).pending > 0,
+    )
+    .sort((a, b) => (a.lesson_date < b.lesson_date ? 1 : a.lesson_date > b.lesson_date ? -1 : a.position - b.position));
+}

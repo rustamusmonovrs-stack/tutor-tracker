@@ -60,7 +60,7 @@ export function ProgressButton({
   onClick,
 }: {
   progress: Progress;
-  /** The group has tasks that day (so "0 assigned" means Berilmagan rather than "no tasks"). */
+  /** The group has tasks that day (so "0 assigned" means Biriktirilmagan rather than "no tasks"). */
   tasksExist: boolean;
   /** Old-style single grade stored on the lesson. */
   legacy?: string | null;
@@ -73,7 +73,7 @@ export function ProgressButton({
   if (progress.assigned === 0) {
     tone = "none";
     main = "—";
-    sub = legacy ? `Eski: ${legacy}` : tasksExist ? "Berilmagan" : "Vazifa yo'q";
+    sub = legacy ? `Eski: ${legacy}` : tasksExist ? "Biriktirilmagan" : "Vazifa yo'q";
   } else {
     main = `${progress.full}/${progress.assigned}`;
     sub = progress.tone === "pending" ? (progress.graded === 0 ? "Baholanmagan" : `${progress.ungraded} ta qoldi`) : TONE_WORD[progress.tone];

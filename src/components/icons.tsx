@@ -40,6 +40,11 @@ export {
   Printer as IconPrint,
   Flag as IconFlag,
   ArrowRightLeft as IconTransfer,
+  Ellipsis as IconMore,
+  Users as IconUsers,
+  CircleDashed as IconPending,
+  CalendarClock as IconDue,
+  ChevronUp as IconChevronUp,
 } from "lucide-react";
 
 /** Coin glyph (kept custom: lucide has no flat coin with a mark). */
