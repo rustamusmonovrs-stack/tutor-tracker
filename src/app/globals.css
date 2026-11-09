@@ -2490,3 +2490,15 @@ dialog.tdlg { width: min(680px, calc(100vw - 24px)); }
 .gmenu__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .gdialog__list { margin: 0; padding-left: 18px; color: var(--ink); }
 .plan-card .plan__fields { grid-template-columns: minmax(0, 1fr); }
+
+/* "Berilgan vazifalar": collapsible panel (view state only) */
+.hwt__toggle { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; min-height: 32px; margin: 0 0 0 -6px; padding: 2px 8px 2px 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hwt__toggle:hover { background: var(--surface-2); }
+.hwt__toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.hwt__chev { flex: none; width: 16px; height: 16px; color: var(--ink-3); transform: rotate(-90deg); transition: transform 160ms ease; }
+.hwt[data-open="true"] .hwt__chev { transform: rotate(0deg); }
+.hwt__body { display: grid; gap: var(--s3); }
+.hwt__body[hidden] { display: none; }
+.hwt[data-open="false"] { gap: 0; }
+.hwt-card .hwt[data-open="false"] { padding-block: var(--s2); }
+@media (prefers-reduced-motion: reduce) { .hwt__chev { transition: none; } }

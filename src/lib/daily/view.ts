@@ -52,6 +52,10 @@ export interface ViewTable {
   legend?: string;
   columns: ViewColumn[];
   rows: Cell[][];
+  /** Indices of the homework-status columns ("Vazifa holati" or the per-task columns). */
+  homeworkCols?: number[];
+  /** Per row: attendance was "Kelmadi" on this date. Used by the PDF display rule only (see pdf.ts). */
+  absent?: boolean[];
 }
 
 export interface DailyView {
@@ -200,11 +204,14 @@ export function buildDailyView(r: DailyReport): DailyView {
     return cells;
   });
 
+  const absent = r.rows.map((row) => row.attendance === "absent");
   const table: ViewTable = {
     title: "O‘quvchilar jurnali",
     legend: r.test ? "Natija: — ball kiritilmagan (0 ball emas). 0/… — haqiqiy nol ball." : undefined,
     columns,
     rows,
+    homeworkCols: inline ? liveTasks.map((_, k) => 3 + k) : [3],
+    absent,
   };
 
   // ---- summary -------------------------------------------------------------------------------
@@ -257,6 +264,8 @@ export function buildDailyView(r: DailyReport): DailyView {
         { text: row.name },
         ...(row.homework.kind === "smart" ? liveTasks.map((ti) => taskCell((row.homework as Extract<DailyHomework, { kind: "smart" }>).tasks[ti])) : []),
       ]),
+      homeworkCols: liveTasks.map((_, k) => 2 + k),
+      absent,
     };
   }
 

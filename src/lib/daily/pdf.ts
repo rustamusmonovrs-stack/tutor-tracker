@@ -511,15 +511,25 @@ export async function buildDailyPdf(view: DailyView, assets: DailyPdfAssets): Pr
     return out;
   }
 
+  /**
+   * PDF display rule: a student marked "Kelmadi" on this date shows 0 in the homework-status column(s), instead of
+   * any status. Display only — the shared view, the HTML, stored assessments and coins are untouched.
+   */
+  function absentAsZero(t: ViewTable): ViewTable {
+    const cols = new Set(t.homeworkCols ?? []);
+    if (!t.absent || cols.size === 0) return t;
+    return { ...t, rows: t.rows.map((row, ri) => (t.absent![ri] ? row.map((c, i) => (cols.has(i) ? { text: "0" } : c)) : row)) };
+  }
+
   // ---------- document ----------
   newPage(true);
   header();
   metaStrip(view.info.filter((i) => !i.wide));
   details(view.info.filter((i) => i.wide));
-  drawTable(view.table);
+  drawTable(absentAsZero(view.table));
   if (view.appendix) {
     if (view.wide) newPage(false, "landscape");
-    const parts = splitWide(view.appendix);
+    const parts = splitWide(absentAsZero(view.appendix));
     parts.forEach((part) => drawTable(part, { title: true, keepTogether: true }));
   }
 

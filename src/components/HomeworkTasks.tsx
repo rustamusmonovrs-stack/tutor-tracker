@@ -71,6 +71,8 @@ export function HomeworkTasks({
   const [pulling, setPulling] = useState<HwTask | null>(null);
   const [detail, setDetail] = useState<HwTask | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
+  // Panel open/closed: view state only. Collapsing hides the body (nothing unmounts, nothing is saved or removed).
+  const [open, setOpen] = useState(false);
   const [ask, setAsk] = useState<BulkAsk | null>(null);
   const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -159,22 +161,27 @@ export function HomeworkTasks({
   }
 
   return (
-    <section className="hwt" aria-label="Berilgan vazifalar">
+    <section className="hwt" data-open={open} aria-label="Berilgan vazifalar">
       <div className="hwt__head">
-        <span className="plan__title">
-          <IconTask aria-hidden /> Berilgan vazifalar
-        </span>
+        <button type="button" className="hwt__toggle" aria-expanded={open} aria-controls={`hwt-body-${group.id}`} onClick={() => setOpen((v) => !v)}>
+          <IconChevronDown aria-hidden className="hwt__chev" />
+          <span className="plan__title">
+            <IconTask aria-hidden /> Berilgan vazifalar
+          </span>
+          <span className="chip chip--brand" aria-live="polite">
+            {tasks.length} ta vazifa
+          </span>
+        </button>
         <span className="hwt__headr">
-          {tasks.length > 1 && (
+          {open && tasks.length > 1 && (
             <button className="btn btn--sm" onClick={() => void openBulk(tasks, false)} title="Biriktirilgan barcha vazifalarni To'liq deb belgilash">
               <IconCheck aria-hidden /> Barchasi bajardi
             </button>
           )}
-          <span className="chip chip--brand" aria-live="polite">
-            {tasks.length} ta vazifa
-          </span>
         </span>
       </div>
+
+      <div className="hwt__body" id={`hwt-body-${group.id}`} hidden={!open}>
 
       {legacyText && (
         <div className="hwt__legacy">
@@ -354,6 +361,7 @@ export function HomeworkTasks({
           </p>
         )}
       </form>
+      </div>
 
       <TaskDetail task={detail} roster={roster} onClose={() => setDetail(null)} />
 

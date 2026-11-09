@@ -361,9 +361,11 @@ describe("PDF export", () => {
     const file = join(outDir, "english.pdf");
     writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
     const text = pdfText(file);
-    for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "1/3 · 2 ta tekshirilmagan", "Biriktirilmagan", "Vazifalar bo‘yicha batafsil", "1-vazifa", "Tanga"]) {
+    for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "1/3 · 2 ta tekshirilmagan", "Biriktirilmagan", "Vazifalar bo‘yicha batafsil", "1-vazifa", "Tanga"]) {
       expect(text, s).toContain(s);
     }
+    // Bobur was "Kelmadi": the PDF shows 0 for his homework instead of his stored "Qilmadi · 0/2" (display rule only)
+    expect(text).not.toContain("Qilmadi · 0/2");
     expect(text).not.toContain("?");
     writeFileSync(join(outDir, "english.html"), renderDailyHtml(buildDailyView(r), portraitDataUri(portrait)));
   });
@@ -560,5 +562,68 @@ describe("PDF pagination and wide task tables", () => {
     expect(text).toContain("Vazifalar bo‘yicha batafsil (1–4-vazifa)");
     expect(text).toContain("Vazifalar bo‘yicha batafsil (5–7-vazifa)");
     for (let i = 0; i < 21; i++) expect(text).toContain(`Familiya${i} Ism${i}`);
+  });
+});
+
+describe("PDF display rule: Kelmadi -> Vazifa holati = 0", () => {
+  const D = "2026-11-09";
+  const mk = (id: string, name: string): Student => ({ id, group_id: "g", name, archived_at: null, created_at: "2026-09-01T05:00:00Z" });
+  const students = [mk("a", "Aliyev Anvar"), mk("b", "Botirova Barno"), mk("c", "Comilov Cobir"), mk("d", "Dadajonov Doston")];
+  const les = (sid: string, attendance: Lesson["attendance"]): Lesson => ({ id: `l-${sid}`, student_id: sid, topic_id: null, topic_title: "Dars", lesson_date: D, attendance, homework: null, created_at: `${D}T05:00:00Z` });
+  const lessons = [les("a", "present"), les("b", "absent"), les("c", "present"), les("d", "absent")];
+  const task = (id: string, position: number): HwTask => ({ id, group_id: "g", lesson_date: D, title: `Vazifa ${position}`, due_date: null, position, archived_at: null, created_at: `${D}T0${position}:00:00Z` });
+  const grade = (task_id: string, student_id: string, status: Assessment["status"]): Assessment => ({
+    task_id, student_id, status, coins: status === "full" ? 1 : 0, graded_at: `${D}T10:00:00Z`, rewarded_on: status === "full" ? D : null, completed_late: false, original_status: null, original_graded_at: null,
+  });
+  // b (absent) has a stored Qilmadi, d (absent) is ungraded; a and c came
+  const assessments = [grade("t1", "a", "full"), grade("t1", "b", "not_done"), grade("t1", "c", "partial")];
+  const build = (tasks: HwTask[]) => {
+    const assigned = new Set(students.flatMap((s) => tasks.map((t) => `${t.id}|${s.id}`)));
+    const assessMap = new Map(assessments.filter((a) => tasks.some((t) => t.id === a.task_id)).map((a) => [`${a.task_id}|${a.student_id}`, a]));
+    return buildEnglishDaily({ group: { id: "g", name: "G" }, date: D, students, lessons, plans: [], tasks, assignedSet: assigned, assessMap, coinEvents: taskCoinEvents([...assessMap.values()]), transfersByStudent: new Map(), generatedOn: D });
+  };
+  const rowOf = (text: string, name: string) => text.split("\n").find((l) => l.includes(name))!.replace(/\s+/g, " ").trim();
+
+  it("PDF: absent students show exactly 0 (not Qilmadi, not —); present students keep their real status; Tanga unchanged", async () => {
+    const r = build([task("t1", 1)]);
+    const file = join(outDir, "absent-zero.pdf");
+    writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
+    const text = pdfText(file);
+    const coins = (id: string) => String(r.rows.find((x) => x.studentId === id)!.coins);
+    expect(rowOf(text, "Aliyev Anvar")).toMatch(new RegExp(`Keldi To‘liq ${coins("a")}$`));
+    expect(rowOf(text, "Botirova Barno")).toMatch(new RegExp(`Kelmadi 0 ${coins("b")}$`));
+    expect(rowOf(text, "Comilov Cobir")).toMatch(new RegExp(`Keldi Chala ${coins("c")}$`));
+    expect(rowOf(text, "Dadajonov Doston")).toMatch(new RegExp(`Kelmadi 0 ${coins("d")}$`));
+    expect(text).not.toContain("Qilmadi");
+  });
+
+  it("the shared data, the view and the HTML are untouched: stored statuses stay, nothing is written", () => {
+    const r = build([task("t1", 1)]);
+    const snap = JSON.stringify(assessments);
+    const v = buildDailyView(r);
+    const b = r.rows.find((x) => x.studentId === "b")!;
+    expect(b.homework).toMatchObject({ kind: "smart", overall: "not_done", notDone: 1 });
+    expect(v.table.rows[r.rows.indexOf(b)][3].text).toBe("Qilmadi");
+    const html = renderDailyHtml(v, portraitDataUri(portrait));
+    expect(html).toContain("Qilmadi");
+    expect(JSON.stringify(assessments)).toBe(snap);
+  });
+
+  it("applies to every homework column: inline task columns, overall column and the per-task detail table; also Matematika", async () => {
+    const r3 = build([task("t1", 1), task("t2", 2), task("t3", 3)]); // overall + detail table
+    const file = join(outDir, "absent-zero-3.pdf");
+    writeFileSync(file, await buildDailyPdf(buildDailyView(r3), { fonts, portrait }));
+    const lines = pdfText(file).split("\n").filter((l) => l.includes("Botirova Barno")).map((l) => l.replace(/\s+/g, " ").trim());
+    expect(lines).toHaveLength(2); // main table + detail table
+    expect(lines[0]).toMatch(/Kelmadi 0 \d+$/);
+    expect(lines[1]).toMatch(/Botirova Barno 0 0 0$/);
+
+    const { students: ms, lesson, rec, group } = subjectData("math", 2);
+    const m = buildSubjectDaily({ subject: "math", group, date: DATE, students: ms, generatedOn: TODAY, lessons: [lesson()], records: [rec("s0", { attendance: "absent", homework: "not_submitted" }), rec("s1", { attendance: "present", homework: "not_submitted" })] });
+    const mf = join(outDir, "absent-zero-math.pdf");
+    writeFileSync(mf, await buildDailyPdf(buildDailyView(m), { fonts, portrait }));
+    const mt = pdfText(mf);
+    expect(rowOf(mt, ms[0].name)).toMatch(/Kelmadi 0$/);
+    expect(rowOf(mt, ms[1].name)).toMatch(/Keldi Topshirmadi$/);
   });
 });
