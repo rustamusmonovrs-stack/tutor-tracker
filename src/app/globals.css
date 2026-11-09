@@ -2593,3 +2593,54 @@ dialog.tdlg { width: min(680px, calc(100vw - 24px)); }
 .hwt[data-open="false"] { gap: 0; }
 .hwt-card .hwt[data-open="false"] { padding-block: var(--s2); }
 @media (prefers-reduced-motion: reduce) { .hwt__chev { transition: none; } }
+
+/* ---------- Statistika: weekly homework chart (scoped: .hww) ---------- */
+.hww { --hww-h: 168px; padding-top: 6px; }
+.hww__plot { position: relative; display: grid; align-items: end; gap: 6px; height: calc(var(--hww-h) + 58px); padding-bottom: 36px; }
+.hww__grid { position: absolute; inset: 22px 0 36px; display: grid; grid-template-rows: repeat(2, 1fr); pointer-events: none; }
+.hww__grid i { border-top: 1px dashed var(--line); }
+.hww__grid i:last-child { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--line-strong, var(--line)); }
+.hww__col { position: relative; display: grid; justify-items: center; height: 100%; min-width: 0; }
+.hww__hit { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 8px 8px 0 0; background: transparent; cursor: default; }
+.hww__hit:hover, .hww__hit:focus-visible { background: rgb(39 72 201 / 0.05); }
+.hww__hit:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.hww__bar { display: flex; flex-direction: column-reverse; width: min(36px, 62%); border-radius: 6px 6px 2px 2px; overflow: hidden; box-shadow: 0 1px 2px rgb(15 27 61 / 0.08); }
+.hww__seg { min-height: 2px; flex-basis: 0; }
+.hww__seg + .hww__seg { box-shadow: 0 1px 0 #fff; }
+.hww__seg--ok { background: var(--ok); }
+.hww__seg--warn { background: #e0a526; }
+.hww__seg--bad { background: var(--bad); }
+.hww__total { margin-bottom: 4px; font-size: var(--fs-xs); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.hww__total--zero { color: var(--ink-3); font-weight: 560; }
+.hww__x { position: absolute; bottom: -34px; left: 0; right: 0; display: grid; justify-items: center; line-height: 1.2; font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hww__x b { color: var(--ink-2); font-weight: 620; }
+.hww__tip { position: absolute; z-index: 20; top: 0; left: 50%; display: grid; gap: 3px; width: max-content; min-width: 168px; max-width: 220px; padding: 9px 11px; border-radius: 10px; background: var(--ink); color: #fff; font-size: var(--fs-xs); line-height: 1.4; box-shadow: 0 8px 22px rgb(15 27 61 / 0.25); transform: translate(-50%, 4px); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms, transform 120ms, visibility 120ms; }
+.hww__col:first-child .hww__tip { left: 0; transform: translate(0, 4px); }
+.hww__col--end .hww__tip { left: auto; right: 0; transform: translate(0, 4px); }
+.hww__col:hover .hww__tip, .hww__hit:focus-visible + .hww__x + .hww__tip { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+.hww__col:first-child:hover .hww__tip, .hww__col:first-child .hww__hit:focus-visible + .hww__x + .hww__tip,
+.hww__col--end:hover .hww__tip, .hww__col--end .hww__hit:focus-visible + .hww__x + .hww__tip { transform: none; }
+.hww__tip strong { font-weight: 680; margin-bottom: 2px; }
+.hww__tip-row { display: flex; align-items: center; gap: 7px; }
+.hww__tip-row b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
+.hww__tip-empty { color: rgb(255 255 255 / 0.75); }
+.hww__tip-foot { margin-top: 3px; padding-top: 5px; border-top: 1px solid rgb(255 255 255 / 0.15); color: rgb(255 255 255 / 0.8); }
+.hww__dot { width: 8px; height: 8px; border-radius: 3px; flex: none; }
+.hww__dot--ok { background: var(--ok); }
+.hww__dot--warn { background: #e0a526; }
+.hww__dot--bad { background: var(--bad); }
+.hww__dot--muted { background: #9aa6c2; }
+/* many weeks (90 kun): start date only; with >10 weeks every other label */
+.hww--dense .hww__x span { display: none; }
+.hww--dense .hww__x { bottom: -22px; }
+.hww--dense .hww__plot { padding-bottom: 24px; height: calc(var(--hww-h) + 46px); }
+.hww--dense .hww__grid { bottom: 24px; }
+.hww--sparse .hww__col:nth-child(odd) .hww__x { visibility: hidden; }
+.hww--dense .hww__total { font-size: 10px; }
+.hww--dense .hww__total--zero { opacity: 0.6; }
+@media (max-width: 560px) {
+  .hww { --hww-h: 140px; }
+  .hww__plot { gap: 3px; }
+  .hww__x { font-size: 9.5px; }
+}
+@media (prefers-reduced-motion: reduce) { .hww__tip { transition: none; } }

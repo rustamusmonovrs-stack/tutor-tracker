@@ -4,17 +4,20 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { HBars, Legend, StackedBars } from "@/components/charts";
+import { HomeworkWeekChart } from "@/components/HomeworkWeekChart";
 import { Kpi } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { useHomework } from "@/lib/homeworkData";
 import { addDays, formatShort, todayISO, weekStart } from "@/lib/dates";
+import { homeworkItems, homeworkWeeks, summarizeItems } from "@/lib/homeworkStats";
 import { buildGroupStandings, buildStandings, scoreLessons, summarize, type ScoredLesson } from "@/lib/scoring";
 
 type Days = 7 | 30 | 90;
 
 export default function StatsPage() {
   const { activeGroups, activeStudents, lessons, lessonsByStudent } = useData();
-  const { coinEvents } = useHomework();
+  const hw = useHomework();
+  const { coinEvents } = hw;
   const [days, setDays] = useState<Days>(30);
   const [groupId, setGroupId] = useState("all");
 
@@ -38,6 +41,16 @@ export default function StatsPage() {
     [scoredAll, from, today],
   );
   const sum = useMemo(() => summarize(inPeriod), [inPeriod]);
+
+  // Homework: Smart Homework assessments + old per-lesson grades, dated by the checking lesson (see homeworkStats.ts).
+  // The summary card and the weekly chart are built from the same items.
+  const hwItems = useMemo(
+    () => homeworkItems({ studentIds: ids, lessons, tasks: hw.tasks, assignments: hw.assignments, assessments: hw.assessMap, from, to: today }),
+    [ids, lessons, hw.tasks, hw.assignments, hw.assessMap, from, today],
+  );
+  const hwSum = useMemo(() => summarizeItems(hwItems), [hwItems]);
+  const hwWeeks = useMemo(() => homeworkWeeks(hwItems, from, today), [hwItems, from, today]);
+  const hwReady = hw.status === "ready";
 
   const todays = useMemo(
     () => lessons.filter((l) => l.lesson_date === today && ids.has(l.student_id)),
@@ -119,7 +132,7 @@ export default function StatsPage() {
     );
   }
 
-  const hasData = inPeriod.length > 0;
+  const hasData = inPeriod.length > 0 || hwItems.length > 0;
 
   return (
     <>
@@ -159,9 +172,9 @@ export default function StatsPage() {
         />
         <Kpi
           label="To'liq vazifa"
-          value={sum.graded ? Math.round((sum.full / sum.graded) * 100) : "—"}
-          unit={sum.graded ? "%" : undefined}
-          note={sum.graded ? `${sum.full} / ${sum.graded} baholangan` : "Baholangan vazifa yo'q"}
+          value={!hwReady ? "…" : hwSum.graded ? Math.round((hwSum.full / hwSum.graded) * 100) : "—"}
+          unit={hwReady && hwSum.graded ? "%" : undefined}
+          note={!hwReady ? "Vazifalar yuklanmoqda" : hwSum.graded ? `${hwSum.full} / ${hwSum.graded} baholangan` : "Baholangan vazifa yo'q"}
         />
         <Kpi label="Hafta tangalari" value={weekCoins + taskWeek} note={`Davrda jami: ${sum.coins + taskPeriod}`} />
       </div>
@@ -184,20 +197,29 @@ export default function StatsPage() {
           </div>
           <div className="card chart">
             <span className="chart__title">Uy vazifasi (haftalar bo&apos;yicha)</span>
-            <StackedBars
-              data={weekBuckets.map((w) => {
-                const s = summarize(w.items);
-                return { label: formatShort(w.start), values: { full: s.full, partial: s.partial, notDone: s.notDone } };
-              })}
-              series={hwSeries}
-              summary="Haftalar bo'yicha uy vazifasi natijalari"
-            />
-            <Legend series={hwSeries} />
+            {hw.status === "loading" ? (
+              <div className="skeleton" style={{ height: 180 }} aria-label="Yuklanmoqda" />
+            ) : hw.status === "error" ? (
+              <p className="hint">Smart Homework ma&apos;lumotlari yuklanmadi, shuning uchun bu grafik ko&apos;rsatilmaydi.</p>
+            ) : (
+              <>
+                <HomeworkWeekChart weeks={hwWeeks} from={from} to={today} />
+                <Legend series={hwSeries} />
+                <span className="hint">
+                  Sana — vazifa tekshirilgan dars. Smart Homework baholari va eski (dars bo&apos;yicha) baholar birga
+                  hisoblanadi. Ustunsiz hafta — o&apos;sha haftada baholangan uy vazifasi yo&apos;q.
+                </span>
+              </>
+            )}
           </div>
           <div className="card chart">
             <span className="chart__title">Tangalar (haftalar bo&apos;yicha)</span>
             <StackedBars
-              data={weekBuckets.map((w) => ({ label: formatShort(w.start), values: { coins: summarize(w.items).coins } }))}
+              data={weekBuckets.map((w) => ({
+                label: formatShort(w.start),
+                // Lesson coins + Smart Homework coins of the week (inside the period), as in the "Hafta tangalari" card.
+                values: { coins: summarize(w.items).coins + taskCoin(w.start < from ? from : w.start, addDays(w.start, 6) > today ? today : addDays(w.start, 6)) },
+              }))}
               series={coinSeries}
               summary="Haftalar bo'yicha yig'ilgan tangalar"
             />
