@@ -1,13 +1,18 @@
--- Ark Progress: Smart Homework coin date = the lesson where the task is CHECKED.
+-- Ark Progress: Smart Homework coin date = the day the teacher checks and saves the grade (Asia/Tashkent, server clock).
 --
--- Bug: _apply_grade stored rewarded_on = homework_tasks.lesson_date (the day the task was given/entered).
--- For "Oldin berilgan vazifa" (given e.g. 08.11, checked 09.11 via due_date) the +1 coin was dated 08.11, so the
--- checking lesson in Bugun, the daily PDF/HTML and the weekly views showed 0 for that lesson/week.
+-- Bug: _apply_grade stored rewarded_on = homework_tasks.lesson_date (the day the task was given/entered). A task given
+-- on 08.11 and checked on 09.11 earned its +1 on 08.11, so the checking lesson (Bugun, daily report, weekly views)
+-- showed 0.
 --
--- Fix: only the date of NEW normal grades changes: checking date = due_date when it is after lesson_date, else
--- lesson_date (same rule as the app's lessonCheckTasks). Unchanged: coin amount (+1 per To'liq), late completion
--- (today), undo (stored date), no-op on re-grading with the same status, statuses, assignments, events.
--- No table is altered. Existing rows are NOT touched here (see 20261109_task_coin_checking_date_backfill.sql).
+-- Rule (one for every English group and task): a NEW To'liq grade is dated public.today_tk(), the server's Tashkent
+-- date at the moment the grade is saved. It does not depend on the task's lesson_date, due_date, the Bugun date opened
+-- in the browser, or "Oldin berilgan vazifa". The browser clock is never used.
+-- Unchanged: +1 per To'liq (coins column is generated from status); same status again is a no-op, so an existing
+-- reward keeps its date; Chala/Qilmadi -> no coin; clearing a grade removes the row (and its coin); undo of a bulk
+-- action (restore_assessments) restores the stored previous date via p_rewarded; late completion was already today.
+-- Every writer goes through this function (grade_task, grade_tasks_bulk, restore_assessments). No table, grant, RLS
+-- policy or security setting changes (security invoker, as before).
+-- Existing rows are not touched here (see 20261109_task_coin_checking_date_backfill.sql).
 -- Rollback: 20261109_task_coin_checking_date_rollback.sql
 begin;
 
@@ -33,10 +38,8 @@ begin
     null;
   else
     rew := case when p_status <> 'full' then null
-                when p_rewarded is not null then p_rewarded
-                when p_late then today
-                when t.due_date is not null and t.due_date > t.lesson_date then t.due_date
-                else t.lesson_date end;
+                when p_rewarded is not null then p_rewarded -- undo: restore the stored date
+                else today end;                            -- checking date = day the grade is saved
     insert into public.student_task_assessments (task_id, student_id, status, rewarded_on, completed_late, original_status, original_graded_at)
     values (p_task, p_student, p_status, rew, p_late and p_status = 'full', null, null)
     on conflict (task_id, student_id) do update set

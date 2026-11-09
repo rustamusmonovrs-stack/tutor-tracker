@@ -368,10 +368,8 @@ function rpc(name: string, a: Record<string, unknown>): Result {
           log(prev.status, null);
         }
       } else if (!prev || prev.status !== status) {
-        // Same rule as _apply_grade (20261109): the coin is dated at the lesson where the task is checked.
-        const due = tk.due_date as string | null;
-        const checked = due && due > (tk.lesson_date as string) ? due : (tk.lesson_date as string);
-        const rew = status !== "full" ? null : (rewarded ?? (late ? todayISO() : checked));
+        // Same rule as _apply_grade (20261109): the coin is dated on the day the grade is saved (Tashkent).
+        const rew = status !== "full" ? null : (rewarded ?? todayISO());
         const row = {
           task_id: task, student_id: sid, status, coins: status === "full" ? 1 : 0, graded_at: iso(), rewarded_on: rew,
           completed_late: late && status === "full" || (status === "full" && !!prev?.completed_late && prev?.status === "full"),
