@@ -15,8 +15,9 @@ import { buildDailyPdf } from "./pdf";
 import { buildDailyView } from "./view";
 
 const fonts = {
-  regular: new Uint8Array(readFileSync("public/fonts/DejaVuSans.ttf")),
-  bold: new Uint8Array(readFileSync("public/fonts/DejaVuSans-Bold.ttf")),
+  regular: new Uint8Array(readFileSync("public/fonts/Inter-Regular.ttf")),
+  semibold: new Uint8Array(readFileSync("public/fonts/Inter-SemiBold.ttf")),
+  bold: new Uint8Array(readFileSync("public/fonts/Inter-Bold.ttf")),
 };
 const portrait = new Uint8Array(readFileSync("public/brand/teacher-rustam-usmonov.jpg"));
 const outDir = process.env.REPORT_OUT ?? mkdtempSync(join(tmpdir(), "daily-"));
@@ -209,16 +210,18 @@ describe("english daily report (Smart Homework, existing coins)", () => {
   it("view: progress like 2/3, the five statuses, appendix with the numbered task list, topic and coins column", () => {
     const v = buildDailyView(report());
     const col = v.table.columns.map((c) => c.header);
-    expect(col).toEqual(["№", "O‘quvchi F.I.Sh.", "Davomat", "Uy vazifasi", "Tanga"]);
+    // three live tasks: overall "Vazifa holati" + one per-task detail table
+    expect(col).toEqual(["№", "O‘quvchi", "Davomat", "Vazifa holati", "Tanga"]);
     const texts = v.table.rows.map((r) => r[3].text);
     expect(texts[0]).toBe("Chala · 2/3");
     expect(texts[1]).toBe("Qilmadi · 0/2");
-    expect(texts[2]).toContain("Qisman baholangan");
-    expect(texts[3]).toBe("Berilmagan");
+    expect(texts[2]).toBe("1/3 · 2 ta tekshirilmagan"); // partly graded: never a final verdict
+    expect(texts[3]).toBe("Biriktirilmagan");
     expect(v.info.find((i) => i.label === "Mavzu")!.value).toBe("Present Simple — Positive & Negative");
-    expect(v.appendix!.intro).toHaveLength(3);
+    expect(v.info.find((i) => i.label === "Vazifalar")!.value.split("\n")).toHaveLength(3);
+    expect(v.appendix!.title).toBe("Vazifalar bo‘yicha batafsil");
     expect(v.appendix!.rows[2].map((c) => c.text)).toEqual(["3", "Dilshod Rahimov", "To‘liq", "Baholanmagan", "Baholanmagan"]);
-    expect(v.appendix!.rows[1].map((c) => c.text).slice(2)).toEqual(["Qilmadi", "Qilmadi", "Berilmagan"]);
+    expect(v.appendix!.rows[1].map((c) => c.text).slice(2)).toEqual(["Qilmadi", "Qilmadi", "Biriktirilmagan"]);
     expect(v.wide).toBe(false);
   });
 
@@ -234,7 +237,9 @@ describe("english daily report (Smart Homework, existing coins)", () => {
     const many = Array.from({ length: 7 }, (_, i) => ({ ...e.tasks[0], id: `m${i}`, position: i + 10, title: `Vazifa ${i}` }));
     const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: many, assignedSet: new Set(many.map((t) => `${t.id}|a`)), assessMap: new Map(), coinEvents: [], transfersByStudent: new Map(), generatedOn: TODAY });
     expect(buildDailyView(r).wide).toBe(true);
-    expect(englishLessonDates("g", e.students, e.lessons, e.plans, e.tasks)).toEqual([DATE, "2026-11-03", "2026-11-02"]);
+    // t3 is due on 9 Nov (a future checking date relative to TODAY): offered only once that day has come
+    expect(englishLessonDates("g", e.students, e.lessons, e.plans, e.tasks, new Map(), TODAY)).toEqual([DATE, "2026-11-03", "2026-11-02"]);
+    expect(englishLessonDates("g", e.students, e.lessons, e.plans, e.tasks, new Map(), "2026-11-09")).toEqual(["2026-11-09", DATE, "2026-11-03", "2026-11-02"]);
   });
 
   it("is read-only: inputs are not mutated", () => {
@@ -277,7 +282,8 @@ describe("HTML export", () => {
   });
 
   it("keeps Uzbek Unicode and shows the zero score as a score", () => {
-    expect(html).toContain("O‘quvchi F.I.Sh.");
+    expect(html).toContain("O‘quvchi");
+    expect(html).toContain("Vazifa holati");
     expect(html).toContain("0/20 • 0%");
     expect(html).toContain("Oʻtkir Gʻaniyev");
   });
@@ -304,17 +310,18 @@ describe("PDF export", () => {
     expect(pageCount(file)).toBe(1);
     const info = execFileSync("pdfinfo", [file]).toString();
     expect(info).toMatch(/Page size:\s+595\.\d+ x 841\.\d+/); // A4 portrait
-    expect(execFileSync("pdffonts", [file]).toString()).toMatch(/DejaVu/);
+    expect(execFileSync("pdffonts", [file]).toString()).toMatch(/Inter/);
     const imgs = execFileSync("pdfimages", ["-list", file]).toString();
     expect(imgs).toMatch(/\b480\s+480\b/); // portrait: square, aspect ratio untouched
     expect(imgs).toMatch(/\brgb\b/); // the original colour portrait, not a recoloured copy
     const text = pdfText(file);
-    for (const s of ["KUNLIK HISOBOT", "Teacher: Rustam Usmonov", "FAN", "Matematika", "GURUH", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘QUVCHILAR SONI", "ARK Education", "Sahifa 1 / 1", "Natija", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
+    for (const s of ["KUNLIK HISOBOT", "Teacher: Rustam Usmonov", "FAN", "Matematika", "GURUH", "Matematika 1", "04.11.2026", "Kvadrat tenglamalar", "O‘QUVCHILAR SONI", "Sahifa 1 / 1", "Natija", "Vazifa holati", "Topshirdi", "Topshirmadi", "Tekshirilmagan", "Belgilanmagan", "Oʻtkir Gʻaniyev"]) {
       expect(text, s).toContain(s);
     }
     expect(text).not.toContain("?");
     // removed from the PDF only: no summary block, no explanatory bullets, no photo/teacher card in the footer
-    for (const s of ["ARK EDUCATION", "KUNLIK DARS", "Dars xulosasi", "Jami o‘quvchilar", "Kelganlar", "Shu kun uchun jami tanga", "Belgilanmagan davomat «Kelmadi»"]) expect(text, s).not.toContain(s);
+    // no branding blocks anywhere in the PDF (title stays KUNLIK HISOBOT), no summary, no notes
+    for (const s of ["ARK EDUCATION", "ARK Education", "Ark Progress", "Ark hisobot", "KUNLIK DARS", "Dars xulosasi", "Jami o‘quvchilar", "Kelganlar", "Shu kun uchun jami tanga", "Belgilanmagan davomat «Kelmadi»"]) expect(text, s).not.toContain(s);
     expect(text).not.toMatch(/^\s*•\s/m); // score separators ("18/20 • 90%") are fine; bullet-point notes are not
     expect(imgs.trim().split("\n").length - 2).toBe(1); // the portrait appears once (header), never in the footer
     expect(text.split("Teacher: Rustam Usmonov").length - 1).toBe(1); // header only
@@ -339,7 +346,12 @@ describe("PDF export", () => {
     // every page that carries student rows repeats the table header
     const tablePages = text.split("\f").filter((pg) => /\b(Keldi|Kelmadi)\b/.test(pg));
     expect(tablePages.length).toBeGreaterThanOrEqual(2);
-    for (const pg of tablePages) expect(pg).toContain("O‘quvchi F.I.Sh.");
+    for (const pg of tablePages) expect(pg).toContain("Vazifa holati");
+    // continuation pages: small running header with the date, never the large header or portrait
+    for (const pg of text.split("\f").slice(1).filter((x) => x.trim())) {
+      expect(pg).toContain("04.11.2026");
+      expect(pg).not.toContain("Teacher: Rustam Usmonov");
+    }
     expect(text).not.toContain("?");
   });
 
@@ -349,14 +361,14 @@ describe("PDF export", () => {
     const file = join(outDir, "english.pdf");
     writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
     const text = pdfText(file);
-    for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "Qisman baholangan", "Berilmagan", "Ilova: berilgan vazifalar", "1-vazifa", "Tanga"]) {
+    for (const s of ["Ingliz tili", "Beginner A", "Present Simple", "Chala · 2/3", "Qilmadi · 0/2", "1/3 · 2 ta tekshirilmagan", "Biriktirilmagan", "Vazifalar bo‘yicha batafsil", "1-vazifa", "Tanga"]) {
       expect(text, s).toContain(s);
     }
     expect(text).not.toContain("?");
     writeFileSync(join(outDir, "english.html"), renderDailyHtml(buildDailyView(r), portraitDataUri(portrait)));
   });
 
-  it("6 students and 1 task fit ONE A4 page: no summary, task details kept under the main table, photo top right only", async () => {
+  it("6 students and 1 task fit ONE A4 page: task column inside the main table, no summary, photo top right only", async () => {
     const names = ["Aliyev Vali", "Karimova Madina", "Qodirov Jasur", "Rahimova Nigora", "Tursunov Sardor", "Yusupova Dilnoza"];
     const students: Student[] = names.map((name, i) => ({ id: `s${i}`, group_id: "g", name, archived_at: null, created_at: "2026-09-01T05:00:00Z" }));
     const lessons: Lesson[] = students.map((s, i) => ({ id: `l${i}`, student_id: s.id, topic_id: null, topic_title: "Dars", lesson_date: DATE, attendance: i === 3 ? "absent" : "present", homework: null, created_at: `${DATE}T05:00:00Z` }));
@@ -368,8 +380,10 @@ describe("PDF export", () => {
     writeFileSync(file, await buildDailyPdf(buildDailyView(r), { fonts, portrait }));
     expect(pageCount(file)).toBe(1);
     const text = pdfText(file);
-    for (const s of ["O‘quvchilar jurnali", "Ilova: berilgan vazifalar", "1-vazifa", "Workbook p.12 ex. 1-3", "Aliyev Vali", "Yusupova Dilnoza", "ARK Education", "Sahifa 1 / 1", "Tanga"]) expect(text, s).toContain(s);
-    for (const s of ["Dars xulosasi", "Jami o‘quvchilar"]) expect(text, s).not.toContain(s);
+    // one task: its own column in the ONE student table, no second table repeating the names
+    for (const s of ["Workbook p.12 ex. 1-3", "Aliyev Vali", "Yusupova Dilnoza", "To‘liq", "Chala", "Baholanmagan", "Sahifa 1 / 1", "Tanga"]) expect(text, s).toContain(s);
+    for (const s of ["Dars xulosasi", "Jami o‘quvchilar", "Vazifalar bo‘yicha batafsil", "ARK Education"]) expect(text, s).not.toContain(s);
+    expect(text.split("Aliyev Vali").length - 1).toBe(1);
     expect(execFileSync("pdfimages", ["-list", file]).toString().trim().split("\n").length - 2).toBe(1);
   });
 
@@ -422,7 +436,7 @@ describe("old-date reports do not invent or lose history", () => {
     const r = buildEnglishDaily({ group: e.group, date: DATE, students: e.students, lessons: e.lessons, plans: e.plans, tasks: [...e.tasks, archivedGraded], assignedSet: new Set([...e.assigned, gradedKey]), assessMap, coinEvents: e.coinEvents, transfersByStudent: new Map(), generatedOn: TODAY });
     expect(r.tasks.map((t) => [t.id, t.archived])).toEqual([["t1", false], ["t2", false], ["t3", false], ["arch", true]]); // "old" (archived, never graded) is not there
     const v = buildDailyView(r);
-    expect(v.appendix!.intro!.some((l) => l.includes("[arxivlangan]"))).toBe(true);
+    expect(v.info.find((i) => i.label === "Vazifalar")!.value).toContain("Eski vazifa (arxivlangan)");
     expect(v.notes.some((n) => n.includes("arxivlangan"))).toBe(true);
   });
 
@@ -432,5 +446,119 @@ describe("old-date reports do not invent or lose history", () => {
     expect(past.notes.some((n) => n.includes("tiklangan"))).toBe(true);
     const same = buildDailyView(buildSubjectDaily({ subject: "math", group, date: DATE, students, lessons: [lesson()], records: [rec("s0")], generatedOn: DATE }));
     expect(same.notes.some((n) => n.includes("tiklangan"))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Checking-lesson tasks ("Oldin berilgan vazifa") and the journal layout
+
+describe("tasks checked at a later lesson (regression: Group 909, 09.11.2026 showed «Berilmagan» for everyone)", () => {
+  const D = "2026-11-09";
+  const names = Array.from({ length: 21 }, (_, i) => `O‘quvchi${i + 1} Familiyaev`);
+  const students: Student[] = names.map((name, i) => ({ id: `s${i}`, group_id: "g", name, archived_at: null, created_at: "2026-09-01T05:00:00Z" }));
+  const hw = (id: string, title: string, position: number, over: Partial<HwTask> = {}): HwTask => ({
+    id, group_id: "g", lesson_date: "2026-11-08", title, due_date: D, position, archived_at: null, created_at: "2026-11-08T05:00:00Z", ...over,
+  });
+  // given on 8 Nov, checked on 9 Nov; the third task was never assigned to anybody
+  const tasks = [hw("t1", "Listening", 1), hw("t2", "BBC", 2), hw("t3", "Tarjima va lug‘at", 3), hw("x", "Boshqa kunga", 4, { due_date: "2026-11-12" })];
+  const assigned = new Set(students.flatMap((s) => [`t1|${s.id}`, `t2|${s.id}`, `x|${s.id}`]));
+  const plans: LessonPlan[] = [{ id: "p", group_id: "g", lesson_date: D, topic: "Tarjima va lug‘at so‘raldi", homework: null, updated_at: "" }];
+  const build = (assessMap: Map<string, Assessment> = new Map(), date = D) =>
+    buildEnglishDaily({ group: { id: "g", name: "Group 909" }, date, students, lessons: [], plans, tasks, assignedSet: assigned, assessMap, coinEvents: taskCoinEvents([...assessMap.values()]), transfersByStudent: new Map(), generatedOn: D });
+  const grade = (task_id: string, student_id: string, status: Assessment["status"]): Assessment => ({
+    task_id, student_id, status, coins: status === "full" ? 1 : 0, graded_at: `${D}T10:00:00Z`, rewarded_on: status === "full" ? D : null, completed_late: false, original_status: null, original_graded_at: null,
+  });
+
+  it("earlier-given tasks whose checking date is this lesson are part of this lesson's report (same rule as Bugun)", () => {
+    const r = build();
+    expect(r.tasks.map((t) => [t.title, t.given])).toEqual([["Listening", "2026-11-08"], ["BBC", "2026-11-08"], ["Tarjima va lug‘at", "2026-11-08"]]);
+    expect(r.hasData).toBe(true);
+    // assigned but not graded yet: Baholanmagan, never Biriktirilmagan and never Qilmadi
+    for (const row of r.rows) expect(row.homework).toMatchObject({ kind: "smart", assigned: 2, graded: 0, overall: "ungraded", tasks: ["ungraded", "ungraded", "unassigned"] });
+    expect(englishLessonDates("g", students, [], plans, tasks, new Map(), D)).toEqual([D, "2026-11-08"]); // 12 Nov is still in the future
+  });
+
+  it("view: the two assigned tasks become columns of the ONE table; the unassigned one is listed, not given a column", () => {
+    const v = buildDailyView(build());
+    expect(v.table.columns.map((c) => c.header)).toEqual(["№", "O‘quvchi", "Davomat", "Listening", "BBC", "Tanga"]);
+    expect(v.appendix).toBeNull();
+    expect(v.table.rows[0].map((c) => c.text)).toEqual(["1", names[0], "Belgilanmagan", "Baholanmagan", "Baholanmagan", "0"]);
+    const listed = v.info.find((i) => i.label === "Vazifalar")!.value;
+    expect(listed).toContain("1. Listening (08.11.2026 da berilgan)");
+    expect(listed).toContain("3. Tarjima va lug‘at (08.11.2026 da berilgan, hech kimga biriktirilmagan)");
+    expect(JSON.stringify(v.table)).not.toContain("Berilmagan");
+  });
+
+  it("graded results show exactly: To‘liq / Chala / Qilmadi per task, and the overall progress with counts", () => {
+    const m = new Map<string, Assessment>();
+    for (const a of [grade("t1", "s0", "full"), grade("t2", "s0", "full"), grade("t1", "s1", "partial"), grade("t2", "s1", "full"), grade("t1", "s2", "not_done"), grade("t2", "s2", "not_done"), grade("t1", "s3", "full")]) m.set(`${a.task_id}|${a.student_id}`, a);
+    const r = build(m);
+    const v = buildDailyView(r);
+    const at = (id: string) => r.rows.findIndex((x) => x.studentId === id);
+    const cells = (id: string) => v.table.rows[at(id)].slice(3, 5).map((c) => [c.text, c.tone]);
+    expect(cells("s0")).toEqual([["To‘liq", "ok"], ["To‘liq", "ok"]]);
+    expect(cells("s1")).toEqual([["Chala", "warn"], ["To‘liq", "ok"]]);
+    expect(cells("s2")).toEqual([["Qilmadi", "bad"], ["Qilmadi", "bad"]]);
+    expect(cells("s3")).toEqual([["To‘liq", "ok"], ["Baholanmagan", "muted"]]); // partly graded: not shown as complete
+    // the same students in overall mode (what the HTML/PDF shows with 3+ tasks)
+    expect(["s0", "s1", "s2", "s3"].map((id) => { const h = r.rows[at(id)].homework; return h.kind === "smart" && h.overall; })).toEqual(["full", "partial", "not_done", "pending"]);
+    expect(r.rows[at("s0")].coins).toBe(2); // two To‘liq rewarded on this date; read from the assessments, nothing recalculated
+  });
+
+  it("no topic: no placeholder line; a report date without the task's checking date leaves it out", () => {
+    const r = buildEnglishDaily({ group: { id: "g", name: "Group 909" }, date: "2026-11-10", students, lessons: [], plans: [], tasks, assignedSet: assigned, assessMap: new Map(), coinEvents: [], transfersByStudent: new Map(), generatedOn: D });
+    expect(r.tasks).toHaveLength(0);
+    const v = buildDailyView(r);
+    expect(v.info.map((i) => i.label)).toEqual(["Fan", "Guruh", "Sana", "O‘quvchilar soni"]);
+    expect(v.table.rows[0][3].text).toBe("Biriktirilmagan");
+  });
+
+  it("PDF: 21 students fit one A4 page with readable names, statuses, no branding, Sahifa 1 / 1", async () => {
+    const m = new Map<string, Assessment>();
+    for (const a of [grade("t1", "s0", "full"), grade("t2", "s0", "partial"), grade("t1", "s1", "not_done")]) m.set(`${a.task_id}|${a.student_id}`, a);
+    const file = join(outDir, "english-909-like.pdf");
+    writeFileSync(file, await buildDailyPdf(buildDailyView(build(m)), { fonts, portrait }));
+    expect(pageCount(file)).toBe(1);
+    const text = pdfText(file);
+    for (const n of names) expect(text, n).toContain(n); // never truncated
+    for (const s of ["KUNLIK HISOBOT", "Teacher: Rustam Usmonov", "09.11.2026", "Group 909", "21", "Mavzu", "Listening", "BBC", "To‘liq", "Chala", "Qilmadi", "Baholanmagan", "Belgilanmagan", "Sahifa 1 / 1"]) expect(text, s).toContain(s);
+    for (const s of ["ARK Education", "Ark Progress", "Dars xulosasi", "Berilmagan"]) expect(text, s).not.toContain(s);
+    expect(text).not.toContain("?");
+  });
+});
+
+describe("PDF pagination and wide task tables", () => {
+  function english(n: number, nTasks: number) {
+    const students: Student[] = Array.from({ length: n }, (_, i) => ({ id: `s${i}`, group_id: "g", name: `Familiya${i} Ism${i}`, archived_at: null, created_at: "2026-09-01T05:00:00Z" }));
+    const tasks: HwTask[] = Array.from({ length: nTasks }, (_, k) => ({ id: `t${k}`, group_id: "g", lesson_date: DATE, title: `Vazifa ${k + 1}`, due_date: null, position: k, archived_at: null, created_at: `${DATE}T05:00:00Z` }));
+    const assignedSet = new Set(students.flatMap((s) => tasks.map((t) => `${t.id}|${s.id}`)));
+    const lessons: Lesson[] = students.map((s, i) => ({ id: `l${i}`, student_id: s.id, topic_id: null, topic_title: "Dars", lesson_date: DATE, attendance: i % 4 === 1 ? "absent" : "present", homework: null, created_at: `${DATE}T05:00:00Z` }));
+    return buildEnglishDaily({ group: { id: "g", name: "Katta guruh" }, date: DATE, students, lessons, plans: [], tasks, assignedSet, assessMap: new Map(), coinEvents: [], transfersByStudent: new Map(), generatedOn: DATE });
+  }
+  const rowsPerPage = (text: string) => text.split("\f").filter((p) => p.trim()).map((p) => (p.match(/^\s*\d+\s+Familiya\d+/gm) ?? []).length);
+
+  it("70 students: header repeated on every page, every row printed once, no page with only 1–2 rows", async () => {
+    const file = join(outDir, "english-70.pdf");
+    writeFileSync(file, await buildDailyPdf(buildDailyView(english(70, 2)), { fonts, portrait }));
+    const text = pdfText(file);
+    const counts = rowsPerPage(text);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(70);
+    for (const c of counts) expect(c).toBeGreaterThanOrEqual(3);
+    for (const pg of text.split("\f").filter((p) => p.trim())) expect(pg).toContain("Davomat");
+    expect(execFileSync("pdfimages", ["-list", file]).toString().trim().split("\n").length - 2).toBe(1);
+  });
+
+  it("many tasks: main table stays portrait; the per-task detail is split into task groups on landscape pages, names intact", async () => {
+    const file = join(outDir, "english-7tasks.pdf");
+    const v = buildDailyView(english(21, 7));
+    expect(v.wide).toBe(true);
+    writeFileSync(file, await buildDailyPdf(v, { fonts, portrait }));
+    const sizes = execFileSync("pdfinfo", ["-f", "1", "-l", "99", file]).toString().match(/Page\s+\d+ size:\s+([\d.]+) x/g) ?? [];
+    expect(sizes[0]).toMatch(/595\./); // first page portrait
+    expect(sizes.some((x) => /841\./.test(x))).toBe(true); // detail pages landscape
+    const text = pdfText(file);
+    expect(text).toContain("Vazifalar bo‘yicha batafsil (1–4-vazifa)");
+    expect(text).toContain("Vazifalar bo‘yicha batafsil (5–7-vazifa)");
+    for (let i = 0; i < 21; i++) expect(text).toContain(`Familiya${i} Ism${i}`);
   });
 });

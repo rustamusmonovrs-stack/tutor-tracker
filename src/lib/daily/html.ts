@@ -39,7 +39,7 @@ h2::after{content:"";flex:1;height:1px;background:var(--line-2)}
 .item--date dt{color:#e1e9ff}
 .item--date dd{font-size:26px;line-height:1.2;font-weight:800;letter-spacing:.01em}
 .item dt{margin:0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-.item dd{margin:2px 0 0;font-weight:650;overflow-wrap:anywhere}
+.item dd{margin:2px 0 0;font-weight:650;overflow-wrap:anywhere;white-space:pre-line}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .tile{position:relative;background:#fff;border:1px solid var(--line);border-left:5px solid var(--line-2);border-radius:12px;padding:12px 14px}
 .tile--ok{border-left-color:#1fa971;background:#f3fbf7}.tile--bad{border-left-color:#d9534f;background:#fdf4f3}.tile--warn{border-left-color:#e0a100;background:#fffaec}.tile--muted{border-left-color:#9aa6c2;background:#f6f8fc}

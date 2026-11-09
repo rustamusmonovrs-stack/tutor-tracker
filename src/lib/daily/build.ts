@@ -131,6 +131,8 @@ export function englishLessonDates(
   plans: LessonPlan[],
   tasks: HwTask[],
   transfersByStudent: Map<string, GroupTransfer[]> = new Map(),
+  /** Checking dates after this day (future deadlines) are not offered as report dates. */
+  upTo?: string,
 ): string[] {
   const byId = new Map(students.map((s) => [s.id, s]));
   const dates = new Set<string>();
@@ -139,7 +141,12 @@ export function englishLessonDates(
     if (s && groupOnDate(s.group_id, transfersByStudent.get(s.id), l.lesson_date) === groupId) dates.add(l.lesson_date);
   }
   for (const p of plans) if (p.group_id === groupId && (clean(p.topic) || clean(p.homework))) dates.add(p.lesson_date);
-  for (const t of tasks) if (t.group_id === groupId && !t.archived_at) dates.add(t.lesson_date);
+  for (const t of tasks) {
+    if (t.group_id !== groupId || t.archived_at) continue;
+    dates.add(t.lesson_date);
+    // An earlier-given task is checked at the lesson of its stored checking date (Bugun → "Oldin berilgan vazifa").
+    if (t.due_date && t.due_date > t.lesson_date && (!upTo || t.due_date <= upTo)) dates.add(t.due_date);
+  }
   return [...dates].sort().reverse();
 }
 
@@ -155,12 +162,24 @@ export function buildEnglishDaily(input: EnglishDailyInput): DailyReport {
     else lessonsByStudent.set(l.student_id, [l]);
   }
 
-  // The day's tasks in their order: active ones, plus archived ones that were graded (their assessments and coins
-  // still exist, so leaving them out would make the report disagree with the coins). Never-graded archived tasks stay out.
+  // The tasks CHECKED at this lesson, with the same rule as Bugun (lessonCheckTasks): tasks entered at this lesson,
+  // plus earlier-given tasks whose stored checking date (due_date) is this lesson ("Oldin berilgan vazifa").
+  // Active ones, plus archived ones that were graded (their assessments and coins still exist, so leaving them out
+  // would make the report disagree with the coins). Never-graded archived tasks stay out.
   const gradedTaskIds = new Set([...assessMap.keys()].map((k) => k.split("|")[0]));
   const tasks = input.tasks
-    .filter((t) => t.group_id === group.id && t.lesson_date === date && (!t.archived_at || gradedTaskIds.has(t.id)))
-    .sort((a, b) => a.position - b.position || (a.created_at < b.created_at ? -1 : 1));
+    .filter(
+      (t) =>
+        t.group_id === group.id &&
+        (t.lesson_date === date || (t.lesson_date < date && t.due_date === date)) &&
+        (!t.archived_at || gradedTaskIds.has(t.id)),
+    )
+    .sort(
+      (a, b) =>
+        (a.lesson_date < b.lesson_date ? -1 : a.lesson_date > b.lesson_date ? 1 : 0) ||
+        a.position - b.position ||
+        (a.created_at < b.created_at ? -1 : 1),
+    );
   const taskIds = tasks.map((t) => t.id);
   const plan = input.plans.find((p) => p.group_id === group.id && p.lesson_date === date) ?? null;
 
@@ -210,7 +229,7 @@ export function buildEnglishDaily(input: EnglishDailyInput): DailyReport {
     };
   });
 
-  const dailyTasks: DailyTask[] = tasks.map((t) => ({ id: t.id, title: t.title, due: t.due_date, archived: t.archived_at !== null }));
+  const dailyTasks: DailyTask[] = tasks.map((t) => ({ id: t.id, title: t.title, given: t.lesson_date, due: t.due_date, archived: t.archived_at !== null }));
   const anyLesson = groupStudents.some((s) => lessonOf(s.id) !== null);
 
   return {

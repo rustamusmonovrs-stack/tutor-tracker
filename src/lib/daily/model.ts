@@ -60,6 +60,8 @@ export interface DailyRow {
 export interface DailyTask {
   id: string;
   title: string;
+  /** The lesson the task was given/entered under (earlier than the report date for "Oldin berilgan vazifa"). */
+  given: string;
   due: string | null;
   /** Archived after being graded: kept in the report because its assessments (and coins) still exist. */
   archived: boolean;

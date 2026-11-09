@@ -80,7 +80,7 @@ export const TASK_LABEL: Record<TaskCell, string> = {
   partial: "Chala",
   not_done: "Qilmadi",
   ungraded: "Baholanmagan",
-  unassigned: "Berilmagan",
+  unassigned: "Biriktirilmagan",
 };
 const OVERALL_LABEL: Record<SmartOverall, string> = {
   full: "To‘liq",
@@ -88,7 +88,7 @@ const OVERALL_LABEL: Record<SmartOverall, string> = {
   not_done: "Qilmadi",
   pending: "Qisman baholangan",
   ungraded: "Baholanmagan",
-  none: "Berilmagan",
+  none: "Biriktirilmagan",
 };
 const TASK_TONE: Record<TaskCell, Tone> = { full: "ok", partial: "warn", not_done: "bad", ungraded: "muted", unassigned: "faint" };
 const OVERALL_TONE: Record<SmartOverall, Tone> = { full: "ok", partial: "warn", not_done: "bad", pending: "muted", ungraded: "muted", none: "faint" };
@@ -97,6 +97,12 @@ const OVERALL_ICON: Record<SmartOverall, IconName> = { full: "check", partial: "
 
 /** Wide tables switch the PDF to landscape beyond this many task columns. */
 export const MAX_PORTRAIT_TASKS = 5;
+/**
+ * Up to this many tasks are shown as their own columns in the ONE student table (no second table repeating the
+ * names). More tasks keep an overall "Vazifa holati" column plus a separate per-task detail table: on portrait A4
+ * three status columns would squeeze the student names below a readable width.
+ */
+export const MAX_INLINE_TASKS = 2;
 
 export function dailyFileBase(r: DailyReport): string {
   const slug = `${r.subject}-${r.groupName}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || r.subject;
@@ -123,7 +129,8 @@ function homeworkCell(h: DailyHomework): Cell {
   }
   const progress = `${h.full}/${h.assigned}`;
   if (h.overall === "ungraded") return { text: `${OVERALL_LABEL.ungraded} · 0/${h.assigned}`, tone: "muted", icon: "pending" };
-  if (h.overall === "pending") return { text: `${OVERALL_LABEL.pending} · ${h.graded}/${h.assigned}`, tone: "muted", icon: "pending" };
+  // Partly graded: never shown as a final verdict. Completed so far / assigned, and how many are still unchecked.
+  if (h.overall === "pending") return { text: `${progress} · ${h.assigned - h.graded} ta tekshirilmagan`, tone: "muted", icon: "pending" };
   return { text: `${OVERALL_LABEL[h.overall]} · ${progress}`, tone: OVERALL_TONE[h.overall], icon: OVERALL_ICON[h.overall] };
 }
 
@@ -147,25 +154,49 @@ export function buildDailyView(r: DailyReport): DailyView {
     { label: "Guruh", value: r.groupName },
     { label: "Sana", value: dateLabel, kind: "date" },
     { label: "O‘quvchilar soni", value: String(r.rows.length) },
-    { label: "Mavzu", value: r.topic ?? "Kiritilmagan", wide: true },
   ];
+  // Only what was really entered: an empty topic is left out, never replaced by a placeholder.
+  if (r.topic) info.push({ label: "Mavzu", value: r.topic, wide: true });
+
+  // Tasks checked at this lesson. Per student, only tasks actually assigned to them count.
+  const assignedTo = (ti: number) => r.rows.some((row) => row.homework.kind === "smart" && row.homework.tasks[ti] !== "unassigned");
+  if (smart && r.tasks.length > 0) {
+    const parts = r.tasks.map((t, i) => {
+      const notes: string[] = [];
+      if (t.given < r.date) notes.push(`${fullDate(t.given)} da berilgan`);
+      if (t.archived) notes.push("arxivlangan");
+      if (!assignedTo(i)) notes.push("hech kimga biriktirilmagan");
+      return `${i + 1}. ${t.title}${notes.length ? ` (${notes.join(", ")})` : ""}`;
+    });
+    info.push({ label: r.tasks.length === 1 ? "Vazifa" : "Vazifalar", value: parts.join("\n"), wide: true });
+  }
   if (r.homeworkText) info.push({ label: smart ? "Uy vazifasi (matn)" : "Uy vazifasi", value: r.homeworkText, wide: true });
   if (r.test) info.push({ label: "Test", value: `${r.test.title ?? "Nomsiz test"} · maksimal ball ${r.test.max}`, wide: true });
 
   // ---- main table ---------------------------------------------------------------------------
+  // Tasks with at least one assigned student in this roster get a status column; a task nobody has is only listed above.
+  const liveTasks = r.tasks.map((_, i) => i).filter(assignedTo);
+  const usesLegacy = r.rows.some((row) => row.homework.kind === "smart" && row.homework.overall === "none" && row.homework.legacy !== null);
+  const inline = smart && liveTasks.length > 0 && liveTasks.length <= MAX_INLINE_TASKS && !usesLegacy;
+
   const columns: ViewColumn[] = [
     { header: "№", align: "center", weight: 6 },
-    { header: "O‘quvchi F.I.Sh.", align: "left", weight: smart ? 28 : 34 },
-    { header: "Davomat", align: "left", weight: 15 },
-    { header: "Uy vazifasi", align: "left", weight: smart ? 33 : 18 },
+    { header: "O‘quvchi", align: "left", weight: 37 },
+    { header: "Davomat", align: "left", weight: 18 },
   ];
-  if (r.test) columns.push({ header: "Natija", sub: `/ ${r.test.max}`, align: "left", weight: 16 });
-  if (smart) columns.push({ header: "Tanga", align: "center", weight: 9 });
+  if (inline) for (const ti of liveTasks) columns.push({ header: r.tasks[ti].title, align: "left", weight: 27 / liveTasks.length });
+  else columns.push({ header: "Vazifa holati", align: "left", weight: r.test ? 21 : 27 });
+  if (r.test) columns.push({ header: "Natija", sub: `/ ${r.test.max}`, align: "left", weight: 18 });
+  if (smart) columns.push({ header: "Tanga", align: "right", weight: 12 });
 
+  const taskCell = (c: TaskCell): Cell => ({ text: TASK_LABEL[c], tone: TASK_TONE[c], icon: TASK_ICON[c] });
   const rows: Cell[][] = r.rows.map((row, i) => {
-    const cells: Cell[] = [{ text: String(i + 1) }, { text: row.name }, attendanceCell(row.attendance), homeworkCell(row.homework)];
+    const cells: Cell[] = [{ text: String(i + 1) }, { text: row.name }, attendanceCell(row.attendance)];
+    if (inline && row.homework.kind === "smart") for (const ti of liveTasks) cells.push(taskCell(row.homework.tasks[ti]));
+    else cells.push(homeworkCell(row.homework));
     if (r.test) cells.push(scoreCell(row.score, r.test.max));
-    if (smart) cells.push({ text: String(row.coins ?? 0) });
+    // null = not available, which is not the same as a real 0.
+    if (smart) cells.push({ text: row.coins === null ? "—" : String(row.coins) });
     return cells;
   });
 
@@ -210,22 +241,21 @@ export function buildDailyView(r: DailyReport): DailyView {
   }
   if (s.coins !== null) summary.push({ label: "Shu kun uchun jami tanga", value: String(s.coins) });
 
-  // ---- English appendix: assigned tasks and each student's statuses ----------------------------
+  // ---- English, many tasks: one per-task detail table under the main one ----------------------
   let appendix: ViewTable | null = null;
-  if (smart && r.tasks.length > 0) {
+  if (smart && !inline && liveTasks.length > 0) {
     appendix = {
-      title: "Ilova: berilgan vazifalar va bajarilish holati",
-      intro: r.tasks.map((t, i) => `${i + 1}-vazifa: ${t.title}${t.archived ? " [arxivlangan]" : ""}${t.due ? ` (muddat: ${fullDate(t.due)})` : ""}`),
-      legend: "Faqat o‘quvchiga berilgan vazifalar baholanadi. «Berilmagan» — bu vazifa o‘quvchiga berilmagan.",
+      title: "Vazifalar bo‘yicha batafsil",
+      legend: "Faqat o‘quvchiga biriktirilgan vazifalar baholanadi. «Biriktirilmagan» — bu vazifa o‘quvchiga biriktirilmagan.",
       columns: [
         { header: "№", align: "center", weight: 6 },
-        { header: "O‘quvchi F.I.Sh.", align: "left", weight: 30 },
-        ...r.tasks.map((_, i) => ({ header: `${i + 1}-vazifa`, align: "center" as const, weight: Math.max(10, 64 / r.tasks.length) })),
+        { header: "O‘quvchi", align: "left", weight: 30 },
+        ...liveTasks.map((ti) => ({ header: `${ti + 1}-vazifa`, align: "center" as const, weight: Math.max(10, 64 / liveTasks.length) })),
       ],
       rows: r.rows.map((row, i) => [
         { text: String(i + 1) },
         { text: row.name },
-        ...(row.homework.kind === "smart" ? row.homework.tasks : []).map((c): Cell => ({ text: TASK_LABEL[c], tone: TASK_TONE[c], icon: TASK_ICON[c] })),
+        ...(row.homework.kind === "smart" ? liveTasks.map((ti) => taskCell((row.homework as Extract<DailyHomework, { kind: "smart" }>).tasks[ti])) : []),
       ]),
     };
   }
@@ -257,7 +287,7 @@ export function buildDailyView(r: DailyReport): DailyView {
     summary,
     appendix,
     notes,
-    wide: smart && r.tasks.length > MAX_PORTRAIT_TASKS,
+    wide: smart && !inline && liveTasks.length > MAX_PORTRAIT_TASKS,
     fileBase: dailyFileBase(r),
     dateLabel,
     subjectLabel,

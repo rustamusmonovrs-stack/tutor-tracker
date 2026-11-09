@@ -454,7 +454,7 @@ export default function TodayPage() {
         <DailyReportCard
           key={`${group.id}|${date}`}
           pageDate={date}
-          dates={englishLessonDates(group.id, allStudents, allLessons, plans, hw.tasks, transfersByStudent)}
+          dates={englishLessonDates(group.id, allStudents, allLessons, plans, hw.tasks, transfersByStudent, today)}
           build={(d) =>
             buildEnglishDaily({
               group,
